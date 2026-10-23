@@ -1,0 +1,318 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 第一周接口契约",
+    "version": "1.0.0",
+    "description": "供前后端并行开发使用。仅约定第一周的登录、当前用户、健康检查和地区列表；备案、报表及用户管理接口不在本版范围。示例账号、地区及令牌均为占位数据。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "x-conventions": {
+    "jsonNaming": "camelCase",
+    "idEncoding": "字符串，避免 JavaScript 大整数精度丢失",
+    "timeEncoding": "ISO 8601 UTC；界面按 Asia/Shanghai 显示",
+    "responseEnvelope": "所有成功和失败响应均包含 code、message、data、traceId；空列表为 []，缺失对象为 null",
+    "roleCodes": [
+      "ENTERPRISE",
+      "CITY",
+      "PROVINCE"
+    ],
+    "tokenLifetimeSeconds": 7200,
+    "clientTokenHandling": "accessToken 仅保存在前端运行内存；退出时清除，刷新页面后重新登录",
+    "errorStatus": {
+      "400": "请求字段校验失败",
+      "401": "未登录、登录失败或令牌无效/过期",
+      "403": "已登录但无权限",
+      "404": "资源不存在",
+      "409": "状态冲突",
+      "500": "服务器内部错误"
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "健康检查",
+        "description": "无需登录；version 为当前构建版本，不包含主机、数据库或密钥信息。",
+        "operationId": "getHealth",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "服务正常",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": { "status": "UP", "version": "<当前构建版本>" },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "账号密码登录",
+        "description": "三类演示账号均使用此接口。账号或密码错误统一返回 401，不透露账号是否存在。",
+        "operationId": "login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "example": {
+                "username": "demo_enterprise",
+                "password": "<演示密码>"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "登录成功",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "accessToken": "<签名令牌>",
+                    "expiresInSeconds": 7200,
+                    "user": {
+                      "id": "101",
+                      "displayName": "演示企业用户",
+                      "roleCode": "ENTERPRISE",
+                      "orgId": "301",
+                      "orgName": "演示企业"
+                    }
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "获取当前用户",
+        "description": "根据 Bearer 令牌返回当前用户、角色和组织。用户已停用或令牌过期时返回 401。",
+        "operationId": "getCurrentUser",
+        "security": [ { "bearerAuth": [] } ],
+        "responses": {
+          "200": {
+            "description": "当前用户信息",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MeResponse" },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "user": {
+                      "id": "101",
+                      "displayName": "演示企业用户",
+                      "roleCode": "ENTERPRISE",
+                      "orgId": "301",
+                      "orgName": "演示企业"
+                    }
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/meta/regions": {
+      "get": {
+        "summary": "按父级查询地区",
+        "description": "登录后可访问。parentCode 不传时返回顶级地区；指定后返回其直接子级，无子级返回空数组。示例地区代码仅用于说明 JSON 形状。",
+        "operationId": "listRegions",
+        "security": [ { "bearerAuth": [] } ],
+        "parameters": [
+          {
+            "name": "parentCode",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 12 },
+            "example": "DEMO_P"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "直接下级地区；无子级时 data 为 []",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegionsResponse" },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": [
+                    { "code": "DEMO_C1", "name": "演示市", "level": 2 }
+                  ],
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Authorization: Bearer <accessToken>"
+      }
+    },
+    "schemas": {
+      "UserSummary": {
+        "type": "object",
+        "required": [ "id", "displayName", "roleCode", "orgId", "orgName" ],
+        "properties": {
+          "id": { "type": "string" },
+          "displayName": { "type": "string" },
+          "roleCode": { "type": "string", "enum": [ "ENTERPRISE", "CITY", "PROVINCE" ] },
+          "orgId": { "type": "string" },
+          "orgName": { "type": "string" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": [ "username", "password" ],
+        "properties": {
+          "username": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "password": { "type": "string", "minLength": 1, "format": "password" }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "required": [ "code", "message", "data", "traceId" ],
+        "properties": {
+          "code": { "type": "string", "const": "OK" },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": [ "accessToken", "expiresInSeconds", "user" ],
+            "properties": {
+              "accessToken": { "type": "string" },
+              "expiresInSeconds": { "type": "integer", "const": 7200 },
+              "user": { "$ref": "#/components/schemas/UserSummary" }
+            }
+          },
+          "traceId": { "type": "string" }
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "required": [ "code", "message", "data", "traceId" ],
+        "properties": {
+          "code": { "type": "string", "const": "OK" },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": [ "user" ],
+            "properties": { "user": { "$ref": "#/components/schemas/UserSummary" } }
+          },
+          "traceId": { "type": "string" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": [ "code", "message", "data", "traceId" ],
+        "properties": {
+          "code": { "type": "string", "const": "OK" },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": [ "status", "version" ],
+            "properties": {
+              "status": { "type": "string", "const": "UP" },
+              "version": { "type": "string" }
+            }
+          },
+          "traceId": { "type": "string" }
+        }
+      },
+      "RegionsResponse": {
+        "type": "object",
+        "required": [ "code", "message", "data", "traceId" ],
+        "properties": {
+          "code": { "type": "string", "const": "OK" },
+          "message": { "type": "string" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [ "code", "name", "level" ],
+              "properties": {
+                "code": { "type": "string" },
+                "name": { "type": "string" },
+                "level": { "type": "integer" }
+              }
+            }
+          },
+          "traceId": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [ "code", "message", "data", "traceId" ],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "data": { "type": "null" },
+          "traceId": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "字段校验失败",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "code": "BAD_REQUEST",
+              "message": "请求参数不合法",
+              "data": null,
+              "traceId": "example-trace-id"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "未登录或凭据无效",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "code": "UNAUTHORIZED",
+              "message": "账号或密码错误",
+              "data": null,
+              "traceId": "example-trace-id"
+            }
+          }
+        }
+      }
+    }
+  }
+}
