@@ -1,9 +1,9 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "云南省企业就业失业数据采集系统 第一周接口契约",
-    "version": "1.0.0",
-    "description": "供前后端并行开发使用。仅约定第一周的登录、当前用户、健康检查和地区列表；备案、报表及用户管理接口不在本版范围。示例账号、地区及令牌均为占位数据。"
+    "title": "云南省企业就业失业数据采集系统 第一、二周接口契约",
+    "version": "2.0.0",
+    "description": "第一周身份与地区、第二周企业备案接口。第二周已在本机和演示服务器部署验证；演示环境仅使用匿名资料。"
   },
   "servers": [
     {
@@ -43,11 +43,16 @@
             "description": "服务正常",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/HealthResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                },
                 "example": {
                   "code": "OK",
                   "message": "",
-                  "data": { "status": "UP", "version": "<当前构建版本>" },
+                  "data": {
+                    "status": "UP",
+                    "version": "<当前构建版本>"
+                  },
                   "traceId": "example-trace-id"
                 }
               }
@@ -66,7 +71,9 @@
           "required": true,
           "content": {
             "application/json": {
-              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              },
               "example": {
                 "username": "demo_enterprise",
                 "password": "<演示密码>"
@@ -79,7 +86,9 @@
             "description": "登录成功",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/LoginResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                },
                 "example": {
                   "code": "OK",
                   "message": "",
@@ -99,8 +108,12 @@
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
@@ -109,13 +122,19 @@
         "summary": "获取当前用户",
         "description": "根据 Bearer 令牌返回当前用户、角色和组织。用户已停用或令牌过期时返回 401。",
         "operationId": "getCurrentUser",
-        "security": [ { "bearerAuth": [] } ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "当前用户信息",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/MeResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                },
                 "example": {
                   "code": "OK",
                   "message": "",
@@ -133,7 +152,9 @@
               }
             }
           },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
         }
       }
     },
@@ -142,13 +163,20 @@
         "summary": "按父级查询地区",
         "description": "登录后可访问。parentCode 不传时返回顶级地区；指定后返回其直接子级，无子级返回空数组。示例地区代码仅用于说明 JSON 形状。",
         "operationId": "listRegions",
-        "security": [ { "bearerAuth": [] } ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "parentCode",
             "in": "query",
             "required": false,
-            "schema": { "type": "string", "maxLength": 12 },
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            },
             "example": "DEMO_P"
           }
         ],
@@ -157,20 +185,1456 @@
             "description": "直接下级地区；无子级时 data 为 []",
             "content": {
               "application/json": {
-                "schema": { "$ref": "#/components/schemas/RegionsResponse" },
+                "schema": {
+                  "$ref": "#/components/schemas/RegionsResponse"
+                },
                 "example": {
                   "code": "OK",
                   "message": "",
                   "data": [
-                    { "code": "DEMO_C1", "name": "演示市", "level": 2 }
+                    {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "level": 2
+                    }
                   ],
                   "traceId": "example-trace-id"
                 }
               }
             }
           },
-          "400": { "$ref": "#/components/responses/BadRequest" },
-          "401": { "$ref": "#/components/responses/Unauthorized" }
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/province/enterprise-accounts": {
+      "post": {
+        "tags": [
+          "省级建号"
+        ],
+        "summary": "省级创建企业组织和登录账号",
+        "operationId": "createEnterpriseAccount",
+        "description": "只允许 PROVINCE；企业地区由省级选择并固定，必须位于本省且具有现成的所属市级组织。成功响应不返回 initialPassword。企业用第一周 /auth/login 登录。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnterpriseAccountCreateRequest"
+              },
+              "example": {
+                "username": "demo_new_enterprise",
+                "initialPassword": "Example123!",
+                "orgName": "演示企业甲",
+                "regionCode": "DEMO_C"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EnterpriseAccountData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "orgId": "301",
+                    "userId": "101",
+                    "username": "demo_new_enterprise",
+                    "orgName": "演示企业甲",
+                    "region": {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "path": [
+                        {
+                          "code": "DEMO_P",
+                          "name": "演示省",
+                          "level": 1
+                        },
+                        {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "level": 2
+                        }
+                      ]
+                    },
+                    "enabled": true
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/enterprise/filing/options": {
+      "get": {
+        "tags": [
+          "企业备案"
+        ],
+        "summary": "读取企业性质、行业和联系地址两级选项",
+        "operationId": "getFilingOptions",
+        "responses": {
+          "200": {
+            "description": "两级选项；DEMO_ 代码为占位数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FilingOptionsData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "natures": [
+                      {
+                        "code": "DEMO_NATURE_1",
+                        "name": "演示一级选项",
+                        "children": [
+                          {
+                            "code": "DEMO_NATURE_1_1",
+                            "name": "演示二级选项",
+                            "parentCode": "DEMO_NATURE_1"
+                          }
+                        ]
+                      }
+                    ],
+                    "industries": [
+                      {
+                        "code": "DEMO_INDUSTRY_1",
+                        "name": "演示一级选项",
+                        "children": [
+                          {
+                            "code": "DEMO_INDUSTRY_1_1",
+                            "name": "演示二级选项",
+                            "parentCode": "DEMO_INDUSTRY_1"
+                          }
+                        ]
+                      }
+                    ],
+                    "addresses": [
+                      {
+                        "code": "DEMO_ADDR_1",
+                        "name": "演示一级选项",
+                        "children": [
+                          {
+                            "code": "DEMO_ADDR_1_1",
+                            "name": "演示二级选项",
+                            "parentCode": "DEMO_ADDR_1"
+                          }
+                        ]
+                      }
+                    ],
+                    "demo": true
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/enterprise/profile": {
+      "get": {
+        "tags": [
+          "企业备案"
+        ],
+        "summary": "读取本企业资料与固定地区",
+        "operationId": "getOwnEnterpriseProfile",
+        "description": "企业身份从令牌取得。没有资料时 data.profile 为 null、data.status 为 null；前端可用 /auth/me 的 orgName 预填企业名称。PENDING/APPROVED 时 editable=false。",
+        "responses": {
+          "200": {
+            "description": "当前可展示资料",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EnterpriseProfileData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "status": "RETURNED",
+                    "currentVersion": 1,
+                    "editable": true,
+                    "region": {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "path": [
+                        {
+                          "code": "DEMO_P",
+                          "name": "演示省",
+                          "level": 1
+                        },
+                        {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "level": 2
+                        }
+                      ]
+                    },
+                    "profile": {
+                      "organizationCode": "AB1234567",
+                      "enterpriseName": "演示企业甲",
+                      "natureParentCode": "DEMO_NATURE_1",
+                      "natureCode": "DEMO_NATURE_1_1",
+                      "industryParentCode": "DEMO_INDUSTRY_1",
+                      "industryCode": "DEMO_INDUSTRY_1_1",
+                      "mainBusiness": "演示制造业务",
+                      "contactName": "张三",
+                      "addressParentCode": "DEMO_ADDR_1",
+                      "addressCode": "DEMO_ADDR_1_1",
+                      "postalCode": "650000",
+                      "contactPhone": "0871-12345678",
+                      "fax": "0871-12345678",
+                      "email": "demo@example.com"
+                    },
+                    "updatedAt": "2026-10-23T10:00:00Z"
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "企业备案"
+        ],
+        "summary": "覆盖保存本企业草稿",
+        "operationId": "saveOwnEnterpriseProfile",
+        "description": "仅无资料、DRAFT、RETURNED 可保存。允许未填满必填字段，但已填值必须合法；组织机构代码去除首尾空白并转大写，全省唯一。请求不包含地区、orgId、状态或审核结果；多余字段返回 400。提交过的旧快照不可改。采用 PUT 时后端须允许开发前端的 PUT 预检。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnterpriseProfileFields"
+              },
+              "example": {
+                "organizationCode": "AB1234567",
+                "enterpriseName": "演示企业甲",
+                "natureParentCode": "DEMO_NATURE_1",
+                "natureCode": "DEMO_NATURE_1_1",
+                "industryParentCode": "DEMO_INDUSTRY_1",
+                "industryCode": "DEMO_INDUSTRY_1_1",
+                "mainBusiness": "演示制造业务",
+                "contactName": "张三",
+                "addressParentCode": "DEMO_ADDR_1",
+                "addressCode": "DEMO_ADDR_1_1",
+                "postalCode": "650000",
+                "contactPhone": "0871-12345678",
+                "fax": "0871-12345678",
+                "email": "demo@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "草稿已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EnterpriseProfileData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "status": "RETURNED",
+                    "currentVersion": 1,
+                    "editable": true,
+                    "region": {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "path": [
+                        {
+                          "code": "DEMO_P",
+                          "name": "演示省",
+                          "level": 1
+                        },
+                        {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "level": 2
+                        }
+                      ]
+                    },
+                    "profile": {
+                      "organizationCode": "AB1234567",
+                      "enterpriseName": "演示企业甲",
+                      "natureParentCode": "DEMO_NATURE_1",
+                      "natureCode": "DEMO_NATURE_1_1",
+                      "industryParentCode": "DEMO_INDUSTRY_1",
+                      "industryCode": "DEMO_INDUSTRY_1_1",
+                      "mainBusiness": "演示制造业务",
+                      "contactName": "张三",
+                      "addressParentCode": "DEMO_ADDR_1",
+                      "addressCode": "DEMO_ADDR_1_1",
+                      "postalCode": "650000",
+                      "contactPhone": "0871-12345678",
+                      "fax": "0871-12345678",
+                      "email": "demo@example.com"
+                    },
+                    "updatedAt": "2026-10-23T10:00:00Z"
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/enterprise/filing": {
+      "get": {
+        "tags": [
+          "企业备案"
+        ],
+        "summary": "读取本企业备案状态和历史摘要",
+        "operationId": "getOwnFiling",
+        "description": "无资料时返回 {filingId:null,status:null,currentVersion:0,canReport:false,submittedAt:null,reviewedAt:null,returnReason:null,history:[]}。退回理由只针对当前版本；以前的理由在 history 中。",
+        "responses": {
+          "200": {
+            "description": "状态与历史",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FilingStatusData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "status": "RETURNED",
+                    "currentVersion": 1,
+                    "canReport": false,
+                    "submittedAt": "2026-10-23T08:00:00Z",
+                    "reviewedAt": "2026-10-23T09:00:00Z",
+                    "returnReason": "请核对联系电话",
+                    "history": [
+                      {
+                        "version": 1,
+                        "result": "RETURNED",
+                        "submittedAt": "2026-10-23T08:00:00Z",
+                        "reviewedAt": "2026-10-23T09:00:00Z",
+                        "reason": "请核对联系电话"
+                      }
+                    ]
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/enterprise/filing/versions/{version}": {
+      "get": {
+        "tags": [
+          "企业备案"
+        ],
+        "summary": "读取本企业指定已提交版本的不可变快照",
+        "operationId": "getOwnFilingVersion",
+        "parameters": [
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "description": "提交版本号；从 1 开始。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "历史版本与审核结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FilingVersionData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "version": 1,
+                    "result": "RETURNED",
+                    "profile": {
+                      "organizationCode": "AB1234567",
+                      "enterpriseName": "演示企业甲",
+                      "natureParentCode": "DEMO_NATURE_1",
+                      "natureCode": "DEMO_NATURE_1_1",
+                      "industryParentCode": "DEMO_INDUSTRY_1",
+                      "industryCode": "DEMO_INDUSTRY_1_1",
+                      "mainBusiness": "演示制造业务",
+                      "contactName": "张三",
+                      "addressParentCode": "DEMO_ADDR_1",
+                      "addressCode": "DEMO_ADDR_1_1",
+                      "postalCode": "650000",
+                      "contactPhone": "0871-12345678",
+                      "fax": "0871-12345678",
+                      "email": "demo@example.com"
+                    },
+                    "region": {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "path": [
+                        {
+                          "code": "DEMO_P",
+                          "name": "演示省",
+                          "level": 1
+                        },
+                        {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "level": 2
+                        }
+                      ]
+                    },
+                    "submittedAt": "2026-10-23T08:00:00Z",
+                    "reviewedAt": "2026-10-23T09:00:00Z",
+                    "reason": "请核对联系电话"
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/enterprise/filing/submit": {
+      "post": {
+        "tags": [
+          "企业备案"
+        ],
+        "summary": "提交或退回后重新提交备案",
+        "operationId": "submitOwnFiling",
+        "description": "从已保存草稿重新读取并完整验证所有必填项。只允许 DRAFT 或 RETURNED，提交后生成新不可变版本并进入 PENDING。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitRequest"
+              },
+              "example": {
+                "expectedVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "提交成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SubmitData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "status": "PENDING",
+                    "currentVersion": 2,
+                    "submittedAt": "2026-10-23T11:00:00Z",
+                    "canReport": false
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/filings/periods": {
+      "get": {
+        "tags": [
+          "省级备案"
+        ],
+        "summary": "读取可筛选的只读调查期",
+        "operationId": "listFilingPeriods",
+        "description": "仅用于第二周查询/导出的期次选项；新增、修改、开放填报窗口属于第三周。",
+        "responses": {
+          "200": {
+            "description": "调查期选项",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PeriodsData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": [
+                    {
+                      "code": "DEMO_2026_10",
+                      "label": "演示 2026 年 10 月",
+                      "startAt": "2026-09-30T16:00:00Z",
+                      "endExclusiveAt": "2026-10-31T16:00:00Z",
+                      "demo": true
+                    }
+                  ],
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/province/filings": {
+      "get": {
+        "tags": [
+          "省级备案"
+        ],
+        "summary": "查询待审或已备案企业",
+        "operationId": "listProvinceFilings",
+        "description": "默认 status=PENDING、page=0、size=20；按最近提交时间倒序，同时间按 filingId 倒序。地区含下级；periodCode 仅与 APPROVED 同用，不存在的期次返回 400，不能静默忽略。",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "默认 PENDING。PENDING 为待审队列；APPROVED 为当前已备案列表。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED"
+              ]
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "省级辖区内地区代码；包含其所有子地区，不按代码前缀匹配。",
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            }
+          },
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "description": "仅与 status=APPROVED 同时使用；返回当前仍已通过、且审核时间早于该期 endExclusiveAt 的企业。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "从 0 开始的页码。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "description": "每页条数。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "分页结果；无结果 items=[]、total=0",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FilingListData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "filingId": "501",
+                        "orgId": "301",
+                        "enterpriseName": "演示企业甲",
+                        "organizationCode": "AB1234567",
+                        "region": {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "path": [
+                            {
+                              "code": "DEMO_P",
+                              "name": "演示省",
+                              "level": 1
+                            },
+                            {
+                              "code": "DEMO_C",
+                              "name": "演示市",
+                              "level": 2
+                            }
+                          ]
+                        },
+                        "status": "PENDING",
+                        "currentVersion": 1,
+                        "submittedAt": "2026-10-23T08:00:00Z",
+                        "reviewedAt": null
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20,
+                    "filters": {
+                      "status": "PENDING",
+                      "regionCode": null,
+                      "periodCode": null
+                    }
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/province/filings/export": {
+      "get": {
+        "tags": [
+          "省级备案"
+        ],
+        "summary": "导出当前条件下已备案企业 Excel",
+        "operationId": "exportApprovedFilings",
+        "description": "C 实现，A 复核权限与筛选。status 固定 APPROVED，使用列表相同的 regionCode、periodCode 和排序，不分页；没有数据时返回只有表头的 Excel，前端可依据列表 total=0 提前提示。固定列顺序：组织机构代码、企业名称、所属地区、企业性质、所属行业、主要经营业务、联系人、联系地址、邮政编码、联系电话、传真、EMAIL、备案通过时间。时间按 Asia/Shanghai 显示。",
+        "x-exportColumns": [
+          "组织机构代码",
+          "企业名称",
+          "所属地区",
+          "企业性质",
+          "所属行业",
+          "主要经营业务",
+          "联系人",
+          "联系地址",
+          "邮政编码",
+          "联系电话",
+          "传真",
+          "EMAIL",
+          "备案通过时间"
+        ],
+        "parameters": [
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "省级辖区内地区代码；包含其所有子地区，不按代码前缀匹配。",
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            }
+          },
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "description": "仅用于已通过企业；返回当前仍已通过、且审核时间早于该期 endExclusiveAt 的企业。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Excel 文件流，Content-Disposition 为附件；成功响应不使用 JSON 外壳",
+            "headers": {
+              "Content-Disposition": {
+                "description": "下载文件名",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/province/filings/{filingId}": {
+      "get": {
+        "tags": [
+          "省级备案"
+        ],
+        "summary": "读取备案单当前提交快照与审核历史",
+        "operationId": "getProvinceFiling",
+        "parameters": [
+          {
+            "name": "filingId",
+            "in": "path",
+            "required": true,
+            "description": "备案单稳定 ID；同一企业退回重提后保持不变，不是 orgId 或版本号。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前提交版本详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FilingDetailData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "orgId": "301",
+                    "status": "PENDING",
+                    "currentVersion": 2,
+                    "region": {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "path": [
+                        {
+                          "code": "DEMO_P",
+                          "name": "演示省",
+                          "level": 1
+                        },
+                        {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "level": 2
+                        }
+                      ]
+                    },
+                    "profile": {
+                      "organizationCode": "AB1234567",
+                      "enterpriseName": "演示企业甲",
+                      "natureParentCode": "DEMO_NATURE_1",
+                      "natureCode": "DEMO_NATURE_1_1",
+                      "industryParentCode": "DEMO_INDUSTRY_1",
+                      "industryCode": "DEMO_INDUSTRY_1_1",
+                      "mainBusiness": "演示制造业务",
+                      "contactName": "张三",
+                      "addressParentCode": "DEMO_ADDR_1",
+                      "addressCode": "DEMO_ADDR_1_1",
+                      "postalCode": "650000",
+                      "contactPhone": "0871-12345678",
+                      "fax": "0871-12345678",
+                      "email": "demo@example.com"
+                    },
+                    "submittedAt": "2026-10-23T11:00:00Z",
+                    "reviewedAt": null,
+                    "returnReason": null,
+                    "history": [
+                      {
+                        "version": 1,
+                        "result": "RETURNED",
+                        "submittedAt": "2026-10-23T08:00:00Z",
+                        "reviewedAt": "2026-10-23T09:00:00Z",
+                        "reason": "请核对联系电话"
+                      },
+                      {
+                        "version": 2,
+                        "result": "PENDING",
+                        "submittedAt": "2026-10-23T11:00:00Z",
+                        "reviewedAt": null,
+                        "reason": null
+                      }
+                    ]
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/province/filings/{filingId}/versions/{version}": {
+      "get": {
+        "tags": [
+          "省级备案"
+        ],
+        "summary": "读取备案单指定历史版本快照",
+        "operationId": "getProvinceFilingVersion",
+        "parameters": [
+          {
+            "name": "filingId",
+            "in": "path",
+            "required": true,
+            "description": "备案单稳定 ID；同一企业退回重提后保持不变，不是 orgId 或版本号。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "description": "提交版本号；从 1 开始。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "历史版本与审核结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/FilingVersionData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "version": 1,
+                    "result": "RETURNED",
+                    "profile": {
+                      "organizationCode": "AB1234567",
+                      "enterpriseName": "演示企业甲",
+                      "natureParentCode": "DEMO_NATURE_1",
+                      "natureCode": "DEMO_NATURE_1_1",
+                      "industryParentCode": "DEMO_INDUSTRY_1",
+                      "industryCode": "DEMO_INDUSTRY_1_1",
+                      "mainBusiness": "演示制造业务",
+                      "contactName": "张三",
+                      "addressParentCode": "DEMO_ADDR_1",
+                      "addressCode": "DEMO_ADDR_1_1",
+                      "postalCode": "650000",
+                      "contactPhone": "0871-12345678",
+                      "fax": "0871-12345678",
+                      "email": "demo@example.com"
+                    },
+                    "region": {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "path": [
+                        {
+                          "code": "DEMO_P",
+                          "name": "演示省",
+                          "level": 1
+                        },
+                        {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "level": 2
+                        }
+                      ]
+                    },
+                    "submittedAt": "2026-10-23T08:00:00Z",
+                    "reviewedAt": "2026-10-23T09:00:00Z",
+                    "reason": "请核对联系电话"
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/province/filings/{filingId}/approve": {
+      "post": {
+        "tags": [
+          "省级备案"
+        ],
+        "summary": "省级通过当前待审备案",
+        "operationId": "approveProvinceFiling",
+        "parameters": [
+          {
+            "name": "filingId",
+            "in": "path",
+            "required": true,
+            "description": "备案单稳定 ID；同一企业退回重提后保持不变，不是 orgId 或版本号。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveRequest"
+              },
+              "example": {
+                "expectedVersion": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "通过成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "status": "APPROVED",
+                    "currentVersion": 2,
+                    "reviewedAt": "2026-10-23T12:00:00Z",
+                    "returnReason": null,
+                    "canReport": true
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/filings/{filingId}/return": {
+      "post": {
+        "tags": [
+          "省级备案"
+        ],
+        "summary": "省级退回当前待审备案",
+        "operationId": "returnProvinceFiling",
+        "parameters": [
+          {
+            "name": "filingId",
+            "in": "path",
+            "required": true,
+            "description": "备案单稳定 ID；同一企业退回重提后保持不变，不是 orgId 或版本号。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnRequest"
+              },
+              "example": {
+                "expectedVersion": 1,
+                "reason": "请核对联系电话"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "退回成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "filingId": "501",
+                    "status": "RETURNED",
+                    "currentVersion": 1,
+                    "reviewedAt": "2026-10-23T09:00:00Z",
+                    "returnReason": "请核对联系电话",
+                    "canReport": false
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
         }
       }
     }
@@ -186,127 +1650,1309 @@
     "schemas": {
       "UserSummary": {
         "type": "object",
-        "required": [ "id", "displayName", "roleCode", "orgId", "orgName" ],
+        "required": [
+          "id",
+          "displayName",
+          "roleCode",
+          "orgId",
+          "orgName"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "displayName": { "type": "string" },
-          "roleCode": { "type": "string", "enum": [ "ENTERPRISE", "CITY", "PROVINCE" ] },
-          "orgId": { "type": "string" },
-          "orgName": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "roleCode": {
+            "type": "string",
+            "enum": [
+              "ENTERPRISE",
+              "CITY",
+              "PROVINCE"
+            ]
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "orgName": {
+            "type": "string"
+          }
         }
       },
       "LoginRequest": {
         "type": "object",
-        "required": [ "username", "password" ],
+        "required": [
+          "username",
+          "password"
+        ],
         "properties": {
-          "username": { "type": "string", "minLength": 1, "maxLength": 64 },
-          "password": { "type": "string", "minLength": 1, "format": "password" }
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "format": "password"
+          }
         }
       },
       "LoginResponse": {
         "type": "object",
-        "required": [ "code", "message", "data", "traceId" ],
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
         "properties": {
-          "code": { "type": "string", "const": "OK" },
-          "message": { "type": "string" },
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
           "data": {
             "type": "object",
-            "required": [ "accessToken", "expiresInSeconds", "user" ],
+            "required": [
+              "accessToken",
+              "expiresInSeconds",
+              "user"
+            ],
             "properties": {
-              "accessToken": { "type": "string" },
-              "expiresInSeconds": { "type": "integer", "const": 7200 },
-              "user": { "$ref": "#/components/schemas/UserSummary" }
+              "accessToken": {
+                "type": "string"
+              },
+              "expiresInSeconds": {
+                "type": "integer",
+                "const": 7200
+              },
+              "user": {
+                "$ref": "#/components/schemas/UserSummary"
+              }
             }
           },
-          "traceId": { "type": "string" }
+          "traceId": {
+            "type": "string"
+          }
         }
       },
       "MeResponse": {
         "type": "object",
-        "required": [ "code", "message", "data", "traceId" ],
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
         "properties": {
-          "code": { "type": "string", "const": "OK" },
-          "message": { "type": "string" },
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
           "data": {
             "type": "object",
-            "required": [ "user" ],
-            "properties": { "user": { "$ref": "#/components/schemas/UserSummary" } }
+            "required": [
+              "user"
+            ],
+            "properties": {
+              "user": {
+                "$ref": "#/components/schemas/UserSummary"
+              }
+            }
           },
-          "traceId": { "type": "string" }
+          "traceId": {
+            "type": "string"
+          }
         }
       },
       "HealthResponse": {
         "type": "object",
-        "required": [ "code", "message", "data", "traceId" ],
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
         "properties": {
-          "code": { "type": "string", "const": "OK" },
-          "message": { "type": "string" },
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
           "data": {
             "type": "object",
-            "required": [ "status", "version" ],
+            "required": [
+              "status",
+              "version"
+            ],
             "properties": {
-              "status": { "type": "string", "const": "UP" },
-              "version": { "type": "string" }
+              "status": {
+                "type": "string",
+                "const": "UP"
+              },
+              "version": {
+                "type": "string"
+              }
             }
           },
-          "traceId": { "type": "string" }
+          "traceId": {
+            "type": "string"
+          }
         }
       },
       "RegionsResponse": {
         "type": "object",
-        "required": [ "code", "message", "data", "traceId" ],
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
         "properties": {
-          "code": { "type": "string", "const": "OK" },
-          "message": { "type": "string" },
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
           "data": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": [ "code", "name", "level" ],
+              "required": [
+                "code",
+                "name",
+                "level"
+              ],
               "properties": {
-                "code": { "type": "string" },
-                "name": { "type": "string" },
-                "level": { "type": "integer" }
+                "code": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "integer"
+                }
               }
             }
           },
-          "traceId": { "type": "string" }
+          "traceId": {
+            "type": "string"
+          }
         }
       },
       "ErrorResponse": {
         "type": "object",
-        "required": [ "code", "message", "data", "traceId" ],
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
         "properties": {
-          "code": { "type": "string" },
-          "message": { "type": "string" },
-          "data": { "type": "null" },
-          "traceId": { "type": "string" }
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FieldErrorData"
+              }
+            ]
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "RegionPathNode": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "level"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "integer"
+          }
+        }
+      },
+      "RegionInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "path"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegionPathNode"
+            }
+          }
+        }
+      },
+      "EnterpriseAccountCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "initialPassword",
+          "orgName",
+          "regionCode"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "initialPassword": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "pattern": "^(?=.*[A-Za-z])(?=.*[0-9])[!-~]{8,64}$",
+            "description": "8 至 64 位 ASCII 可见字符，不含空格，至少一个英文字母和一个数字；不得写入日志或响应"
+          },
+          "orgName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "regionCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12
+          }
+        }
+      },
+      "EnterpriseAccountData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "orgId",
+          "userId",
+          "username",
+          "orgName",
+          "region",
+          "enabled"
+        ],
+        "properties": {
+          "orgId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "orgName": {
+            "type": "string"
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionInfo"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DictionaryChild": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "parentCode"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentCode": {
+            "type": "string"
+          }
+        }
+      },
+      "DictionaryParent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "children"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DictionaryChild"
+            }
+          }
+        }
+      },
+      "FilingOptionsData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "natures",
+          "industries",
+          "addresses",
+          "demo"
+        ],
+        "properties": {
+          "natures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DictionaryParent"
+            }
+          },
+          "industries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DictionaryParent"
+            }
+          },
+          "addresses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DictionaryParent"
+            }
+          },
+          "demo": {
+            "type": "boolean",
+            "description": "true 表示匿名演示字典，不代表正式云南编码"
+          }
+        }
+      },
+      "EnterpriseProfileFields": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "organizationCode": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]{1,9}$",
+                "description": "去除首尾空白后转大写，仅英文字母或数字，最多 9 位；全省企业唯一"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enterpriseName": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureParentCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryParentCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mainBusiness": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contactName": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "addressParentCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "addressCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "postalCode": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contactPhone": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^(1[3-9][0-9]{9}|0[0-9]{2,3}-[0-9]{7,8})$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fax": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^0[0-9]{2,3}-[0-9]{7,8}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "email",
+                "maxLength": 254
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "EnterpriseProfileData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filingId",
+          "status",
+          "currentVersion",
+          "editable",
+          "region",
+          "profile",
+          "updatedAt"
+        ],
+        "properties": {
+          "filingId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "DRAFT",
+                  "PENDING",
+                  "RETURNED",
+                  "APPROVED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "editable": {
+            "type": "boolean"
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionInfo"
+          },
+          "profile": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/EnterpriseProfileFields"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "FilingHistoryItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "result",
+          "submittedAt",
+          "reviewedAt",
+          "reason"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "RETURNED",
+              "APPROVED"
+            ]
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "FilingStatusData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filingId",
+          "status",
+          "currentVersion",
+          "canReport",
+          "submittedAt",
+          "reviewedAt",
+          "returnReason",
+          "history"
+        ],
+        "properties": {
+          "filingId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "DRAFT",
+                  "PENDING",
+                  "RETURNED",
+                  "APPROVED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "canReport": {
+            "type": "boolean"
+          },
+          "submittedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "returnReason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FilingHistoryItem"
+            }
+          }
+        }
+      },
+      "SubmitRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "SubmitData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filingId",
+          "status",
+          "currentVersion",
+          "submittedAt",
+          "canReport"
+        ],
+        "properties": {
+          "filingId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "PENDING"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canReport": {
+            "type": "boolean",
+            "const": false
+          }
+        }
+      },
+      "FilingVersionData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filingId",
+          "version",
+          "result",
+          "profile",
+          "region",
+          "submittedAt",
+          "reviewedAt",
+          "reason"
+        ],
+        "properties": {
+          "filingId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "RETURNED",
+              "APPROVED"
+            ]
+          },
+          "profile": {
+            "$ref": "#/components/schemas/EnterpriseProfileFields"
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionInfo"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "FilingListItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filingId",
+          "orgId",
+          "enterpriseName",
+          "organizationCode",
+          "region",
+          "status",
+          "currentVersion",
+          "submittedAt",
+          "reviewedAt"
+        ],
+        "properties": {
+          "filingId": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionInfo"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "APPROVED"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "FilingListData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size",
+          "filters"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FilingListItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "filters": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "regionCode",
+              "periodCode"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "PENDING",
+                  "APPROVED"
+                ]
+              },
+              "regionCode": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "periodCode": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "FilingDetailData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filingId",
+          "orgId",
+          "status",
+          "currentVersion",
+          "region",
+          "profile",
+          "submittedAt",
+          "reviewedAt",
+          "returnReason",
+          "history"
+        ],
+        "properties": {
+          "filingId": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "RETURNED",
+              "APPROVED"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionInfo"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/EnterpriseProfileFields"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "returnReason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FilingHistoryItem"
+            }
+          }
+        }
+      },
+      "ApproveRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ReturnRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "去除首尾空白后不可为空；最多 500 字"
+          }
+        }
+      },
+      "ReviewData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "filingId",
+          "status",
+          "currentVersion",
+          "reviewedAt",
+          "returnReason",
+          "canReport"
+        ],
+        "properties": {
+          "filingId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "RETURNED"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "returnReason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "canReport": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Period": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "label",
+          "startAt",
+          "endExclusiveAt",
+          "demo"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endExclusiveAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "demo": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PeriodsData": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Period"
+        }
+      },
+      "FieldErrorData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fieldErrors"
+        ],
+        "properties": {
+          "fieldErrors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
         }
       }
     },
     "responses": {
       "BadRequest": {
-        "description": "字段校验失败",
+        "description": "字段或筛选条件不合法；可在 data.fieldErrors 中定位字段",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
             "example": {
               "code": "BAD_REQUEST",
               "message": "请求参数不合法",
-              "data": null,
+              "data": {
+                "fieldErrors": {
+                  "postalCode": "邮政编码必须为 6 位数字"
+                }
+              },
               "traceId": "example-trace-id"
             }
           }
         }
       },
       "Unauthorized": {
-        "description": "未登录或凭据无效",
+        "description": "未登录或令牌无效、过期",
         "content": {
           "application/json": {
-            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
             "example": {
               "code": "UNAUTHORIZED",
-              "message": "账号或密码错误",
+              "message": "未登录或登录已过期",
+              "data": null,
+              "traceId": "example-trace-id"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "角色不符或超出省级管辖范围",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": "FORBIDDEN",
+              "message": "无权访问",
+              "data": null,
+              "traceId": "example-trace-id"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "资源不存在或当前用户不可见",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": "NOT_FOUND",
+              "message": "资源不存在",
+              "data": null,
+              "traceId": "example-trace-id"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "重复用户名、状态不允许或 expectedVersion 已过期",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "code": "CONFLICT",
+              "message": "当前状态或版本已变化，请刷新后重试",
               "data": null,
               "traceId": "example-trace-id"
             }
@@ -314,5 +2960,47 @@
         }
       }
     }
-  }
+  },
+  "x-businessRules": [
+    {
+      "id": "PERIOD_RULE",
+      "rule": "periodCode 只用于 status=APPROVED 的列表和导出。选中期次时，仅返回当前仍为 APPROVED 且该版本审核通过时间 reviewedAt 早于期次 endExclusiveAt 的企业；不要求通过时间晚于期初。这表示截至该期末已备案，不表示参与该期报送。未知期次返回 400；待审列表带 periodCode 返回 400。"
+    },
+    {
+      "id": "DICTIONARY_SOURCE",
+      "rule": "C 在新增迁移中提供企业性质、行业、联系地址三类两级演示字典，代码以 DEMO_ 开头；GET /enterprise/filing/options 的实际返回是唯一选项来源。前端不硬编码示例代码，后端验证父子关系；这些代码不冒充正式云南编码。"
+    },
+    {
+      "id": "ADDRESS_DETAIL",
+      "rule": "第二周联系地址只用老师要求的两级下拉代码，不增加街道门牌文本。两个层级在提交时都必填；草稿可暂缺。"
+    },
+    {
+      "id": "ORG_CODE_UNIQUENESS",
+      "rule": "组织机构代码去除首尾空白后转大写，1 至 9 位字母或数字，在全省企业资料中唯一。草稿或退回后可修改；待审与已通过只读。与别家重复返回 409，数据库加唯一约束。"
+    },
+    {
+      "id": "ACCOUNT_PARENT_AND_ID",
+      "rule": "省级只能选择本省的市级或其下级地区。企业组织挂到所选地区最近的市级祖先对应的市级组织；地区不存在或找不到市级组织时返回 400，data.fieldErrors.regionCode 指出原因；选到省级辖区之外返回 403。不自动创建虚构市局。C 增加独立的 ID 分配表，迁移时根据现有最大 ID 初始化，按组织和用户分别维护下一个 BIGINT，在建号事务中锁行取号；不在每次请求中使用 MAX(id)+1。"
+    },
+    {
+      "id": "INITIAL_PASSWORD",
+      "rule": "省级建号时输入 initialPassword：8 至 64 位 ASCII 可见字符，不含空格，至少一个英文字母和一个数字。成功响应不回传口令，数据库只存 BCrypt 哈希；由建号人通过项目组线下渠道交给企业。本周不强制首次改密；公网 HTTP 环境只用匿名演示口令。"
+    },
+    {
+      "id": "NAME_SYNC",
+      "rule": "建号 orgName 是初始组织名称。尚未保存资料时，前端可用 /auth/me 的 orgName 预填 enterpriseName；保存后以备案资料里的 enterpriseName 为准。审核通过时后端同步 org_unit.name 为通过版本的 enterpriseName；省级备案列表和详情始终显示提交快照中的企业名称。"
+    },
+    {
+      "id": "EXPORT_COLUMNS",
+      "rule": "Excel 固定列顺序：组织机构代码、企业名称、所属地区、企业性质、所属行业、主要经营业务、联系人、联系地址、邮政编码、联系电话、传真、EMAIL、备案通过时间。地区及两级选项导出可读名称，不导出内部 ID、口令或哈希。备案通过时间按 Asia/Shanghai 显示。导出同筛选条件下全部 APPROVED 结果；无结果时返回只有表头的 Excel。"
+    }
+  ],
+  "x-frontEndFlow": [
+    "省级先用第一周登录接口取得令牌，再调用 POST /province/enterprise-accounts 建号；企业地区使用现有 /meta/regions 逐级选择。初始口令仅私下交付企业。",
+    "企业登录后依次读取 GET /enterprise/filing/options、GET /enterprise/profile、GET /enterprise/filing；地区只显示，不提交修改。",
+    "企业在可编辑状态用 PUT /enterprise/profile 保存草稿，再以当前 currentVersion 调用 POST /enterprise/filing/submit。提交后页面改为只读。",
+    "省级用 GET /province/filings 查看 PENDING 列表和详情；审核请求带 expectedVersion。退回理由写入历史，企业重新保存并提交后产生下一版本。",
+    "APPROVED 时 canReport 才为 true。省级已备案列表按地区和调查期筛选；GET /province/filings/export 下载同条件 Excel。"
+  ],
+  "x-contractStatus": "WEEK2_DEPLOYED_AND_VERIFIED"
 }
