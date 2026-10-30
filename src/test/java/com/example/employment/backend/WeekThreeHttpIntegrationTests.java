@@ -164,7 +164,10 @@ class WeekThreeHttpIntegrationTests {
                 "{\"expectedVersion\":2}").statusCode()).isEqualTo(200);
         assertThat(jdbc.queryForObject("SELECT employment_count FROM enterprise_baseline WHERE org_id=6300",
                 Integer.class)).isEqualTo(120);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM report_snapshot", Integer.class))
+        assertThat(jdbc.queryForObject("""
+                SELECT COUNT(*) FROM report_snapshot s
+                JOIN enterprise_report r ON r.id=s.report_id WHERE r.org_id=6300
+                """, Integer.class))
                 .isEqualTo(2);
         assertThat(body(call("GET", "/api/v1/enterprise/reports?status=SUBMITTED_CITY", enterprise,
                 null)).path("data").path("total").asInt()).isEqualTo(2);
@@ -198,6 +201,16 @@ class WeekThreeHttpIntegrationTests {
         jdbc.update("""
                 INSERT INTO enterprise_filing (id,org_id,status,current_version,updated_at)
                 VALUES (9001,6300,'APPROVED',1,CURRENT_TIMESTAMP)
+                """);
+        jdbc.update("""
+                INSERT INTO filing_version (filing_id,version,result,organization_code,
+                    enterprise_name,nature_parent_code,nature_code,industry_parent_code,
+                    industry_code,main_business,contact_name,address_parent_code,address_code,
+                    postal_code,contact_phone,fax,submitted_at,submitted_by)
+                VALUES (9001,1,'APPROVED','W3CODE001','企业','DEMO_NATURE_1',
+                    'DEMO_NATURE_1_1','DEMO_INDUSTRY_1','DEMO_INDUSTRY_1_1',
+                    '测试业务','联系人','DEMO_ADDR_1','DEMO_ADDR_1_1','100000',
+                    '13800000000','01000000000',CURRENT_TIMESTAMP,6301)
                 """);
     }
 

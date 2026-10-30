@@ -121,8 +121,11 @@ public class PeriodService {
     public static String blockedReason(SurveyPeriod period, boolean eligible, String reportStatus,
             Instant now) {
         if (period.legacy()) return "LEGACY_PERIOD";
-        if ("SUBMITTED_CITY".equals(reportStatus)) return "ALREADY_SUBMITTED";
+        if (reportStatus != null && !"DRAFT".equals(reportStatus)
+                && !"RETURNED_CITY".equals(reportStatus)
+                && !"RETURNED_PROVINCE".equals(reportStatus)) return "ALREADY_SUBMITTED";
         if (!eligible) return "FILING_NOT_APPROVED";
+        if ("RETURNED_CITY".equals(reportStatus) || "RETURNED_PROVINCE".equals(reportStatus)) return null;
         if (now.isBefore(period.openAt())) return "WINDOW_NOT_OPEN";
         if (!now.isBefore(period.closeAt())) return "WINDOW_CLOSED";
         return null;

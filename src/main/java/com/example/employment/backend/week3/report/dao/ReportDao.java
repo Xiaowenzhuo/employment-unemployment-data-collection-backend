@@ -36,6 +36,11 @@ public class ReportDao {
                 (lock ? " FOR UPDATE" : ""), this::report, orgId, periodCode).stream().findFirst();
     }
 
+    public Optional<Report> byId(long id, boolean lock) {
+        return jdbc.query("SELECT * FROM enterprise_report WHERE id=?" +
+                (lock ? " FOR UPDATE" : ""), this::report, id).stream().findFirst();
+    }
+
     public long nextId() {
         Long next = jdbc.queryForObject("""
                 SELECT next_id FROM id_allocator WHERE entity_name='enterprise_report' FOR UPDATE
@@ -65,7 +70,7 @@ public class ReportDao {
                 other_reason=?, reduction_type_code=?, primary_reason_code=?, primary_reason_detail=?,
                 secondary_reason_code=?, secondary_reason_detail=?, tertiary_reason_code=?,
                 tertiary_reason_detail=?, current_version=current_version+1, updated_at=?
-                WHERE id=? AND status='DRAFT' AND current_version=?
+                WHERE id=? AND status IN ('DRAFT','RETURNED_CITY','RETURNED_PROVINCE') AND current_version=?
                 """, form.baselineEmploymentCount(), form.periodEmploymentCount(), form.otherReason(),
                 form.reductionTypeCode(), form.primaryReasonCode(), form.primaryReasonDetail(),
                 form.secondaryReasonCode(), form.secondaryReasonDetail(), form.tertiaryReasonCode(),
@@ -77,7 +82,7 @@ public class ReportDao {
                 UPDATE enterprise_report SET status='SUBMITTED_CITY',
                 current_version=current_version+1, submission_version=submission_version+1,
                 updated_at=?, submitted_at=?
-                WHERE id=? AND status='DRAFT' AND current_version=?
+                WHERE id=? AND status IN ('DRAFT','RETURNED_CITY','RETURNED_PROVINCE') AND current_version=?
                 """, now, now, id, expectedVersion);
     }
 
@@ -90,14 +95,16 @@ public class ReportDao {
         jdbc.update("INSERT INTO enterprise_baseline VALUES (?, ?, ?)", orgId, count, reportId);
     }
 
-    public void snapshot(Report report, int version, long actorId, LocalDateTime now) {
+    public void snapshot(Report report, int version, long actorId, LocalDateTime now,
+            long filingId, int filingVersion) {
         ReportForm form = report.form();
         jdbc.update("INSERT INTO report_snapshot (report_id, submission_version, " + FORM_COLUMNS +
-                ", submitted_at, submitted_by, result) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED_CITY')",
+                ", submitted_at, submitted_by, result, filing_id, filing_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED_CITY', ?, ?)",
                 report.id(), version, form.baselineEmploymentCount(), form.periodEmploymentCount(),
                 form.otherReason(), form.reductionTypeCode(), form.primaryReasonCode(),
                 form.primaryReasonDetail(), form.secondaryReasonCode(), form.secondaryReasonDetail(),
-                form.tertiaryReasonCode(), form.tertiaryReasonDetail(), now, actorId);
+                form.tertiaryReasonCode(), form.tertiaryReasonDetail(), now, actorId,
+                filingId, filingVersion);
     }
 
     public List<Snapshot> snapshots(long reportId) {
@@ -107,7 +114,9 @@ public class ReportDao {
                 WHERE s.report_id=? ORDER BY s.submission_version DESC
                 """, (rs, row) -> new Snapshot(rs.getInt("submission_version"), form(rs),
                 instant(rs, "submitted_at"), rs.getString("username"),
-                rs.getString("result")), reportId);
+                rs.getString("result"), rs.getObject("filing_id") == null ? null :
+                        Long.toString(rs.getLong("filing_id")),
+                (Integer) rs.getObject("filing_version")), reportId);
     }
 
     public List<ListItem> list(long orgId, String periodCode, String status, int size, int offset) {
@@ -120,7 +129,7 @@ public class ReportDao {
                 (rs, row) -> new ListItem(Long.toString(rs.getLong("id")),
                         rs.getString("period_code"), rs.getString("period_label"),
                         rs.getString("status"), rs.getInt("current_version"),
-                        rs.getInt("submission_version"), instant(rs, "submitted_at")));
+                        rs.getInt("submission_version"), instant(rs, "submitted_at"), null));
     }
 
     public long count(long orgId, String periodCode, String status) {

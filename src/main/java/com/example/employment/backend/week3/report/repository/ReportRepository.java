@@ -20,6 +20,7 @@ public class ReportRepository {
     public Optional<Report> byOrgPeriod(long orgId, String code, boolean lock) {
         return dao.byOrgPeriod(orgId, code, lock);
     }
+    public Optional<Report> byId(long id, boolean lock) { return dao.byId(id, lock); }
     public long nextId() { return dao.nextId(); }
     public void lockOrg(long orgId) { dao.lockOrg(orgId); }
     public void insert(long id, long orgId, String code, ReportForm form, LocalDateTime now) {
@@ -33,8 +34,9 @@ public class ReportRepository {
     public void insertBaseline(long orgId, int count, long reportId) {
         dao.insertBaseline(orgId, count, reportId);
     }
-    public void snapshot(Report report, int version, long actorId, LocalDateTime now) {
-        dao.snapshot(report, version, actorId, now);
+    public void snapshot(Report report, int version, long actorId, LocalDateTime now,
+            long filingId, int filingVersion) {
+        dao.snapshot(report, version, actorId, now, filingId, filingVersion);
     }
     public List<Snapshot> snapshots(long reportId) { return dao.snapshots(reportId); }
     public List<ListItem> list(long orgId, String code, String status, int size, int offset) {

@@ -1,0 +1,3228 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 第四周市省两级审核接口约定",
+    "version": "0.4.0",
+    "description": "依据老师原始需求、第四周市省两级审核协作纲领和第三周已部署接口起草。本文明确新增审核接口及需扩展的企业接口。第四周代码已在本机及共享服务器实现并验证；现有 W1–W3 接口仍以已上线契约为准。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "相对路径；共享服务器已运行第四周接口。"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "市级报表审核",
+      "description": "CITY 角色，仅本市企业已提交报表。"
+    },
+    {
+      "name": "省级报表审核",
+      "description": "PROVINCE 角色，仅本省且曾进入省审的报表。"
+    },
+    {
+      "name": "企业退回重报",
+      "description": "扩展第三周既有企业接口；不新增企业审核路径。"
+    }
+  ],
+  "x-contractStatus": "SERVER_DEPLOYED_VERIFIED",
+  "x-sourcePriority": [
+    "老师原始需求说明书",
+    "第四周市省两级审核协作纲领.docx",
+    "第三周已部署后端与 w3-api-contract.openapi.json",
+    "需求歧义与项目自定规则.md（仅补足未明确口径）"
+  ],
+  "x-newOperations": 8,
+  "x-extendedExistingOperations": 6,
+  "x-frontendFlow": [
+    "市级登录 GET /city/reports（默认 SUBMITTED_CITY）→ GET /city/reports/{reportId} 查看本次提交快照和历史→带 expectedVersion、submissionVersion POST /approve 或 /return；409 时重读详情。",
+    "市级通过后省级 GET /province/reports（默认 SUBMITTED_PROVINCE）→详情→通过或退回。省级通过仅表示审核完成，不代表汇总或上报部委。",
+    "企业 GET /enterprise/reports/{periodCode} 看到 RETURNED_CITY/RETURNED_PROVINCE、latestReturn 和可写状态→PUT 整份保存→POST /submit 重报；新 submissionVersion 加 1，状态回 SUBMITTED_CITY。",
+    "审核列表与企业历史均展示当前状态和 reviewEvents；快照按 submissionVersion 区分，旧版不可覆盖；按钮权限仅作提示，后端仍按令牌与版本重查。"
+  ],
+  "x-conventions": {
+    "jsonNaming": "camelCase",
+    "ids": "数据库 ID 以十进制字符串传递；currentVersion、submissionVersion 为整数。",
+    "time": "所有接口时间使用 UTC ISO-8601 Z；前端按 Asia/Shanghai 展示。",
+    "auth": "所有路径需 Authorization: Bearer <accessToken>；角色按 /city、/province、/enterprise 分流。",
+    "response": "统一 code/message/data/traceId 外壳。",
+    "writeBody": "严格拒绝未知字段；审核人、组织、状态由令牌和服务端状态机决定，浏览器不得自报。",
+    "errors": "400 data.fieldErrors；401 未登录；403 角色不符或企业当前备案资格不足；404 不存在或不在本组织可见范围；409 版本/提交版本/状态/窗口冲突。"
+  },
+  "x-statusMachine": [
+    {
+      "from": "DRAFT",
+      "actor": "ENTERPRISE",
+      "action": "SUBMIT",
+      "to": "SUBMITTED_CITY",
+      "window": "原窗口开放"
+    },
+    {
+      "from": "SUBMITTED_CITY",
+      "actor": "CITY",
+      "action": "APPROVE",
+      "to": "SUBMITTED_PROVINCE"
+    },
+    {
+      "from": "SUBMITTED_CITY",
+      "actor": "CITY",
+      "action": "RETURN",
+      "to": "RETURNED_CITY"
+    },
+    {
+      "from": "SUBMITTED_PROVINCE",
+      "actor": "PROVINCE",
+      "action": "APPROVE",
+      "to": "APPROVED_PROVINCE"
+    },
+    {
+      "from": "SUBMITTED_PROVINCE",
+      "actor": "PROVINCE",
+      "action": "RETURN",
+      "to": "RETURNED_PROVINCE"
+    },
+    {
+      "from": "RETURNED_CITY",
+      "actor": "ENTERPRISE",
+      "action": "SAVE",
+      "to": "RETURNED_CITY"
+    },
+    {
+      "from": "RETURNED_PROVINCE",
+      "actor": "ENTERPRISE",
+      "action": "SAVE",
+      "to": "RETURNED_PROVINCE"
+    },
+    {
+      "from": "RETURNED_CITY",
+      "actor": "ENTERPRISE",
+      "action": "RESUBMIT",
+      "to": "SUBMITTED_CITY",
+      "window": "原窗口关闭也允许"
+    },
+    {
+      "from": "RETURNED_PROVINCE",
+      "actor": "ENTERPRISE",
+      "action": "RESUBMIT",
+      "to": "SUBMITTED_CITY",
+      "window": "原窗口关闭也允许"
+    }
+  ],
+  "x-ruleRegister": "同目录《需求歧义与项目自定规则.md》第四周章节，记录省级历史可见范围、退回窗口例外、版本、备注与快照备案版本等自定口径。",
+  "paths": {
+    "/city/reports": {
+      "get": {
+        "tags": [
+          "市级报表审核"
+        ],
+        "operationId": "cityListReports",
+        "summary": "市级分页查看辖区报表",
+        "description": "仅列本市已至少提交一次的报表，默认 SUBMITTED_CITY 待办；指定状态可只读追溯其他已提交状态，不包含 DRAFT。按 lastActivityAt 倒序、reportId 倒序。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "description": "按可见调查期筛选；未知或非本省期次为 400。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "省略时默认当前级别待审；指定后查询该状态下可见的已提交报表。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SUBMITTED_CITY",
+                "SUBMITTED_PROVINCE",
+                "RETURNED_CITY",
+                "RETURNED_PROVINCE",
+                "APPROVED_PROVINCE"
+              ],
+              "default": "SUBMITTED_CITY"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewList"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "reportId": "21",
+                        "periodCode": "DEMO_2026_11",
+                        "periodLabel": "2026年11月演示调查期",
+                        "orgId": "1007",
+                        "enterpriseName": "演示企业",
+                        "organizationCode": "AB1234567",
+                        "cityOrgId": "200",
+                        "cityName": "演示市",
+                        "regionCode": "DEMO_D",
+                        "regionName": "演示区县",
+                        "status": "SUBMITTED_CITY",
+                        "currentVersion": 2,
+                        "submissionVersion": 1,
+                        "baselineEmploymentCount": 120,
+                        "periodEmploymentCount": 112,
+                        "lastActivityAt": "2026-11-01T04:00:00.000Z",
+                        "submittedAt": "2026-11-01T04:00:00.000Z",
+                        "canReview": true,
+                        "latestReturn": null
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20,
+                    "filters": {
+                      "periodCode": null,
+                      "status": "SUBMITTED_CITY"
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/city/reports/{reportId}": {
+      "get": {
+        "tags": [
+          "市级报表审核"
+        ],
+        "operationId": "cityGetReport",
+        "summary": "市级查看报表、提交快照与审核时间线",
+        "description": "只读查看本市已提交过的报表。外市、未提交或不存在均 404；仅 SUBMITTED_CITY 的最新提交版本可由市级审核。 审核展示的 form 与人数均来自最新已提交快照；企业退回后未重报的草稿不显示给审核员。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "报表数据库 ID，以十进制正整数字符串表示。格式错误返回 400；不存在或不在辖区返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "example": "21"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewDetail"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "periodLabel": "2026年11月演示调查期",
+                    "orgId": "1007",
+                    "enterpriseName": "演示企业",
+                    "organizationCode": "AB1234567",
+                    "cityOrgId": "200",
+                    "cityName": "演示市",
+                    "regionCode": "DEMO_D",
+                    "regionName": "演示区县",
+                    "status": "SUBMITTED_CITY",
+                    "currentVersion": 2,
+                    "submissionVersion": 1,
+                    "baselineEmploymentCount": 120,
+                    "periodEmploymentCount": 112,
+                    "lastActivityAt": "2026-11-01T04:00:00.000Z",
+                    "submittedAt": "2026-11-01T04:00:00.000Z",
+                    "canReview": true,
+                    "latestReturn": null,
+                    "form": {
+                      "baselineEmploymentCount": 120,
+                      "periodEmploymentCount": 112,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "snapshots": [
+                      {
+                        "submissionVersion": 1,
+                        "form": {
+                          "baselineEmploymentCount": 120,
+                          "periodEmploymentCount": 112,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "submittedAt": "2026-11-01T04:00:00.000Z",
+                        "submittedBy": "1008",
+                        "result": "SUBMITTED_CITY",
+                        "filingId": "9",
+                        "filingVersion": 1
+                      }
+                    ],
+                    "currentSnapshot": {
+                      "submissionVersion": 1,
+                      "form": {
+                        "baselineEmploymentCount": 120,
+                        "periodEmploymentCount": 112,
+                        "otherReason": "无",
+                        "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                        "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                        "primaryReasonDetail": "员工自行离职",
+                        "secondaryReasonCode": null,
+                        "secondaryReasonDetail": null,
+                        "tertiaryReasonCode": null,
+                        "tertiaryReasonDetail": null
+                      },
+                      "submittedAt": "2026-11-01T04:00:00.000Z",
+                      "submittedBy": "1008",
+                      "result": "SUBMITTED_CITY",
+                      "filingId": "9",
+                      "filingVersion": 1
+                    },
+                    "reviewEvents": []
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/city/reports/{reportId}/approve": {
+      "post": {
+        "tags": [
+          "市级报表审核"
+        ],
+        "operationId": "cityApproveReport",
+        "summary": "市级审核通过当前提交版本",
+        "description": "仅当前状态 SUBMITTED_CITY 可操作；服务端按令牌核对角色、辖区、expectedVersion 和 submissionVersion。通过后进入 SUBMITTED_PROVINCE；省级通过不代表汇总或报部委。状态与审核记录在一个事务内写入，每次审核 currentVersion 加 1，submissionVersion 不变。重复、乱序或旧版本操作为 409。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "报表数据库 ID，以十进制正整数字符串表示。格式错误返回 400；不存在或不在辖区返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "example": "21"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveReviewRequest"
+              },
+              "example": {
+                "expectedVersion": 2,
+                "submissionVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewResult"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "SUBMITTED_PROVINCE",
+                    "currentVersion": 3,
+                    "submissionVersion": 1,
+                    "event": {
+                      "eventId": "301",
+                      "level": "CITY",
+                      "action": "APPROVE",
+                      "fromStatus": "SUBMITTED_CITY",
+                      "toStatus": "SUBMITTED_PROVINCE",
+                      "submissionVersion": 1,
+                      "reviewerUserId": "102",
+                      "reviewerOrgId": "200",
+                      "reviewerDisplayName": "演示市级审核员",
+                      "reviewedAt": "2026-11-01T05:00:00.000Z",
+                      "comment": null
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/city/reports/{reportId}/return": {
+      "post": {
+        "tags": [
+          "市级报表审核"
+        ],
+        "operationId": "cityReturnReport",
+        "summary": "市级退回当前提交版本",
+        "description": "仅当前状态 SUBMITTED_CITY 可操作；服务端按令牌核对角色、辖区、expectedVersion 和 submissionVersion。备注可省略或为 null，去首尾空白后为空也按 null 保存；退回后企业可修改并重报。状态与审核记录在一个事务内写入，每次审核 currentVersion 加 1，submissionVersion 不变。重复、乱序或旧版本操作为 409。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "报表数据库 ID，以十进制正整数字符串表示。格式错误返回 400；不存在或不在辖区返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "example": "21"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnReviewRequest"
+              },
+              "example": {
+                "expectedVersion": 2,
+                "submissionVersion": 1,
+                "comment": "请核对人数"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewResult"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "RETURNED_CITY",
+                    "currentVersion": 3,
+                    "submissionVersion": 1,
+                    "event": {
+                      "eventId": "301",
+                      "level": "CITY",
+                      "action": "RETURN",
+                      "fromStatus": "SUBMITTED_CITY",
+                      "toStatus": "RETURNED_CITY",
+                      "submissionVersion": 1,
+                      "reviewerUserId": "102",
+                      "reviewerOrgId": "200",
+                      "reviewerDisplayName": "演示市级审核员",
+                      "reviewedAt": "2026-11-01T05:00:00.000Z",
+                      "comment": "请核对人数"
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/province/reports": {
+      "get": {
+        "tags": [
+          "省级报表审核"
+        ],
+        "operationId": "provinceListReports",
+        "summary": "省级分页查看辖区报表",
+        "description": "仅列本省且至少有一次市级通过记录的报表；默认 SUBMITTED_PROVINCE 待办，指定状态可只读追溯。首次仍在市审的报表不在省级列表。按 lastActivityAt 倒序、reportId 倒序。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "description": "按可见调查期筛选；未知或非本省期次为 400。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "省略时默认当前级别待审；指定后查询该状态下可见的已提交报表。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SUBMITTED_CITY",
+                "SUBMITTED_PROVINCE",
+                "RETURNED_CITY",
+                "RETURNED_PROVINCE",
+                "APPROVED_PROVINCE"
+              ],
+              "default": "SUBMITTED_PROVINCE"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewList"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "reportId": "21",
+                        "periodCode": "DEMO_2026_11",
+                        "periodLabel": "2026年11月演示调查期",
+                        "orgId": "1007",
+                        "enterpriseName": "演示企业",
+                        "organizationCode": "AB1234567",
+                        "cityOrgId": "200",
+                        "cityName": "演示市",
+                        "regionCode": "DEMO_D",
+                        "regionName": "演示区县",
+                        "status": "SUBMITTED_PROVINCE",
+                        "currentVersion": 3,
+                        "submissionVersion": 1,
+                        "baselineEmploymentCount": 120,
+                        "periodEmploymentCount": 112,
+                        "lastActivityAt": "2026-11-01T05:00:00.000Z",
+                        "submittedAt": "2026-11-01T04:00:00.000Z",
+                        "canReview": true,
+                        "latestReturn": null
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20,
+                    "filters": {
+                      "periodCode": null,
+                      "status": "SUBMITTED_PROVINCE"
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/province/reports/{reportId}": {
+      "get": {
+        "tags": [
+          "省级报表审核"
+        ],
+        "operationId": "provinceGetReport",
+        "summary": "省级查看报表、提交快照与审核时间线",
+        "description": "只读查看本省且曾经市级通过的报表；首次尚在市审、外省或不存在均 404。仅 SUBMITTED_PROVINCE 的最新提交版本可由省级审核。 审核展示的 form 与人数均来自最新已提交快照；企业退回后未重报的草稿不显示给审核员。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "报表数据库 ID，以十进制正整数字符串表示。格式错误返回 400；不存在或不在辖区返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "example": "21"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewDetail"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "periodLabel": "2026年11月演示调查期",
+                    "orgId": "1007",
+                    "enterpriseName": "演示企业",
+                    "organizationCode": "AB1234567",
+                    "cityOrgId": "200",
+                    "cityName": "演示市",
+                    "regionCode": "DEMO_D",
+                    "regionName": "演示区县",
+                    "status": "SUBMITTED_PROVINCE",
+                    "currentVersion": 3,
+                    "submissionVersion": 1,
+                    "baselineEmploymentCount": 120,
+                    "periodEmploymentCount": 112,
+                    "lastActivityAt": "2026-11-01T05:00:00.000Z",
+                    "submittedAt": "2026-11-01T04:00:00.000Z",
+                    "canReview": true,
+                    "latestReturn": null,
+                    "form": {
+                      "baselineEmploymentCount": 120,
+                      "periodEmploymentCount": 112,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "snapshots": [
+                      {
+                        "submissionVersion": 1,
+                        "form": {
+                          "baselineEmploymentCount": 120,
+                          "periodEmploymentCount": 112,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "submittedAt": "2026-11-01T04:00:00.000Z",
+                        "submittedBy": "1008",
+                        "result": "SUBMITTED_CITY",
+                        "filingId": "9",
+                        "filingVersion": 1
+                      }
+                    ],
+                    "currentSnapshot": {
+                      "submissionVersion": 1,
+                      "form": {
+                        "baselineEmploymentCount": 120,
+                        "periodEmploymentCount": 112,
+                        "otherReason": "无",
+                        "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                        "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                        "primaryReasonDetail": "员工自行离职",
+                        "secondaryReasonCode": null,
+                        "secondaryReasonDetail": null,
+                        "tertiaryReasonCode": null,
+                        "tertiaryReasonDetail": null
+                      },
+                      "submittedAt": "2026-11-01T04:00:00.000Z",
+                      "submittedBy": "1008",
+                      "result": "SUBMITTED_CITY",
+                      "filingId": "9",
+                      "filingVersion": 1
+                    },
+                    "reviewEvents": [
+                      {
+                        "eventId": "301",
+                        "level": "CITY",
+                        "action": "APPROVE",
+                        "fromStatus": "SUBMITTED_CITY",
+                        "toStatus": "SUBMITTED_PROVINCE",
+                        "submissionVersion": 1,
+                        "reviewerUserId": "102",
+                        "reviewerOrgId": "200",
+                        "reviewerDisplayName": "演示市级审核员",
+                        "reviewedAt": "2026-11-01T05:00:00.000Z",
+                        "comment": null
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/province/reports/{reportId}/approve": {
+      "post": {
+        "tags": [
+          "省级报表审核"
+        ],
+        "operationId": "provinceApproveReport",
+        "summary": "省级审核通过当前提交版本",
+        "description": "仅当前状态 SUBMITTED_PROVINCE 可操作；服务端按令牌核对角色、辖区、expectedVersion 和 submissionVersion。通过后进入 APPROVED_PROVINCE；省级通过不代表汇总或报部委。状态与审核记录在一个事务内写入，每次审核 currentVersion 加 1，submissionVersion 不变。重复、乱序或旧版本操作为 409。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "报表数据库 ID，以十进制正整数字符串表示。格式错误返回 400；不存在或不在辖区返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "example": "21"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveReviewRequest"
+              },
+              "example": {
+                "expectedVersion": 3,
+                "submissionVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewResult"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "APPROVED_PROVINCE",
+                    "currentVersion": 4,
+                    "submissionVersion": 1,
+                    "event": {
+                      "eventId": "302",
+                      "level": "PROVINCE",
+                      "action": "APPROVE",
+                      "fromStatus": "SUBMITTED_PROVINCE",
+                      "toStatus": "APPROVED_PROVINCE",
+                      "submissionVersion": 1,
+                      "reviewerUserId": "103",
+                      "reviewerOrgId": "100",
+                      "reviewerDisplayName": "演示省级审核员",
+                      "reviewedAt": "2026-11-01T05:00:00.000Z",
+                      "comment": null
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/province/reports/{reportId}/return": {
+      "post": {
+        "tags": [
+          "省级报表审核"
+        ],
+        "operationId": "provinceReturnReport",
+        "summary": "省级退回当前提交版本",
+        "description": "仅当前状态 SUBMITTED_PROVINCE 可操作；服务端按令牌核对角色、辖区、expectedVersion 和 submissionVersion。备注可省略或为 null，去首尾空白后为空也按 null 保存；退回后企业可修改并重报。状态与审核记录在一个事务内写入，每次审核 currentVersion 加 1，submissionVersion 不变。重复、乱序或旧版本操作为 409。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "报表数据库 ID，以十进制正整数字符串表示。格式错误返回 400；不存在或不在辖区返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            },
+            "example": "21"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReturnReviewRequest"
+              },
+              "example": {
+                "expectedVersion": 3,
+                "submissionVersion": 1,
+                "comment": "请核对人数"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReviewResult"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "RETURNED_PROVINCE",
+                    "currentVersion": 4,
+                    "submissionVersion": 1,
+                    "event": {
+                      "eventId": "302",
+                      "level": "PROVINCE",
+                      "action": "RETURN",
+                      "fromStatus": "SUBMITTED_PROVINCE",
+                      "toStatus": "RETURNED_PROVINCE",
+                      "submissionVersion": 1,
+                      "reviewerUserId": "103",
+                      "reviewerOrgId": "100",
+                      "reviewerDisplayName": "演示省级审核员",
+                      "reviewedAt": "2026-11-01T05:00:00.000Z",
+                      "comment": "请核对人数"
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    },
+    "/enterprise/periods": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "企业查看期次、窗口和填报资格",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EnterprisePeriodList"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "code": "DEMO_2026_11",
+                        "label": "2026年11月演示调查期",
+                        "startAt": "2026-10-31T16:00:00Z",
+                        "endExclusiveAt": "2026-11-30T16:00:00Z",
+                        "openAt": "2026-10-30T04:00:00Z",
+                        "closeAt": "2026-11-03T04:00:00Z",
+                        "demo": true,
+                        "legacy": false,
+                        "currentVersion": 1,
+                        "windowStatus": "CLOSED",
+                        "filingEligible": true,
+                        "canWrite": true,
+                        "blockedReason": null
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "沿用第三周期次归属和窗口字段。当前报表为 RETURNED_CITY/RETURNED_PROVINCE、备案仍 APPROVED 时，原窗口虽已关闭也可重报，canWrite=true 且 blockedReason=null；首次草稿/提交仍遵守原窗口。"
+      }
+    },
+    "/enterprise/reports": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "按期次和状态分页查看本企业报表",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportList"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "reportId": "21",
+                        "periodCode": "DEMO_2026_11",
+                        "periodLabel": "2026年11月演示调查期",
+                        "status": "RETURNED_PROVINCE",
+                        "currentVersion": 4,
+                        "submissionVersion": 1,
+                        "submittedAt": "2026-10-30T05:20:00.000Z",
+                        "latestReturn": {
+                          "level": "PROVINCE",
+                          "comment": "请核对人数",
+                          "reviewedAt": "2026-11-01T06:00:00.000Z",
+                          "reviewerUserId": "103",
+                          "reviewerDisplayName": "演示省级审核员"
+                        }
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "仅本企业已有报表；status 可为 DRAFT、SUBMITTED_CITY、SUBMITTED_PROVINCE、RETURNED_CITY、RETURNED_PROVINCE、APPROVED_PROVINCE。未传状态返回所有，按最近活动时间倒序。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选；未知期次返回 400"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED_CITY",
+                "SUBMITTED_PROVINCE",
+                "RETURNED_CITY",
+                "RETURNED_PROVINCE",
+                "APPROVED_PROVINCE"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ]
+      }
+    },
+    "/enterprise/reports/{periodCode}": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "读取本企业指定期次的报表或空表单",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportView"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "empty": {
+                    "summary": "已有期次但企业尚无报表",
+                    "value": {
+                      "code": "OK",
+                      "message": "",
+                      "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e",
+                      "data": {
+                        "reportId": null,
+                        "periodCode": "DEMO_2026_11",
+                        "status": null,
+                        "currentVersion": 0,
+                        "submissionVersion": 0,
+                        "filingEligible": true,
+                        "windowStatus": "OPEN",
+                        "canWrite": true,
+                        "blockedReason": null,
+                        "baselineLocked": false,
+                        "form": null,
+                        "updatedAt": null,
+                        "submittedAt": null,
+                        "lockedBaselineEmploymentCount": null
+                      }
+                    }
+                  },
+                  "draft": {
+                    "summary": "已有草稿",
+                    "value": {
+                      "code": "OK",
+                      "message": "",
+                      "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e",
+                      "data": {
+                        "reportId": "21",
+                        "periodCode": "DEMO_2026_11",
+                        "status": "DRAFT",
+                        "currentVersion": 2,
+                        "submissionVersion": 0,
+                        "filingEligible": true,
+                        "windowStatus": "OPEN",
+                        "canWrite": true,
+                        "blockedReason": null,
+                        "baselineLocked": false,
+                        "form": {
+                          "baselineEmploymentCount": 120,
+                          "periodEmploymentCount": 112,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "本期有员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "updatedAt": "2026-10-30T05:15:32.123Z",
+                        "submittedAt": null,
+                        "lockedBaselineEmploymentCount": null
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "RETURNED_PROVINCE",
+                    "currentVersion": 4,
+                    "submissionVersion": 1,
+                    "filingEligible": true,
+                    "windowStatus": "CLOSED",
+                    "canWrite": true,
+                    "blockedReason": null,
+                    "baselineLocked": true,
+                    "lockedBaselineEmploymentCount": 120,
+                    "form": {
+                      "baselineEmploymentCount": 120,
+                      "periodEmploymentCount": 112,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "updatedAt": "2026-11-01T06:00:00.000Z",
+                    "submittedAt": "2026-11-01T04:00:00.000Z",
+                    "latestReturn": {
+                      "level": "PROVINCE",
+                      "comment": "请核对人数",
+                      "reviewedAt": "2026-11-01T06:00:00.000Z",
+                      "reviewerUserId": "103",
+                      "reviewerDisplayName": "演示省级审核员"
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "新增 latestReturn，供企业查看当前退回级别、备注和时间；退回状态下即使原窗口关闭也可按规则继续保存/重报，其他状态保持只读。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "整份覆盖保存本期草稿",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportView"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "RETURNED_PROVINCE",
+                    "currentVersion": 5,
+                    "submissionVersion": 1,
+                    "filingEligible": true,
+                    "windowStatus": "CLOSED",
+                    "canWrite": true,
+                    "blockedReason": null,
+                    "baselineLocked": true,
+                    "form": {
+                      "baselineEmploymentCount": 120,
+                      "periodEmploymentCount": 112,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "本期有员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "updatedAt": "2026-11-02T04:00:00.000Z",
+                    "submittedAt": "2026-11-01T04:00:00.000Z",
+                    "lockedBaselineEmploymentCount": 120,
+                    "latestReturn": {
+                      "level": "PROVINCE",
+                      "comment": "请核对人数",
+                      "reviewedAt": "2026-11-01T06:00:00.000Z",
+                      "reviewerUserId": "103",
+                      "reviewerDisplayName": "演示省级审核员"
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "沿用 W3 整份覆盖字段和 expectedVersion。DRAFT 在原填报窗口内可保存；RETURNED_CITY/RETURNED_PROVINCE 在备案仍 APPROVED 时可于窗口关闭后保存，状态保持原退回状态，currentVersion 加 1，旧提交快照不改。其他状态、旧期次或版本冲突为 409。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveReportRequest"
+              },
+              "example": {
+                "expectedVersion": 1,
+                "baselineEmploymentCount": 120,
+                "periodEmploymentCount": 112,
+                "otherReason": "无",
+                "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                "primaryReasonDetail": "本期有员工自行离职",
+                "secondaryReasonCode": null,
+                "secondaryReasonDetail": null,
+                "tertiaryReasonCode": null,
+                "tertiaryReasonDetail": null
+              }
+            }
+          }
+        }
+      }
+    },
+    "/enterprise/reports/{periodCode}/submit": {
+      "post": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "确认并提交本期报表至市级待审",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SubmitReportResult"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "SUBMITTED_CITY",
+                    "currentVersion": 6,
+                    "submissionVersion": 2,
+                    "submittedAt": "2026-10-30T05:20:00.000Z"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "DRAFT 首次提交仍须原窗口开放；RETURNED_CITY/RETURNED_PROVINCE 可在原窗口关闭后重报，仍须当前备案 APPROVED、完整字段与 expectedVersion。每次重报 currentVersion 与 submissionVersion 各加 1，追加不可变快照并重新进入 SUBMITTED_CITY，必须重新经市审。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitReportRequest"
+              },
+              "example": {
+                "expectedVersion": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    "/enterprise/reports/{periodCode}/history": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "查看本企业该期的只读提交快照",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportHistory"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "SUBMITTED_CITY",
+                    "snapshots": [
+                      {
+                        "submissionVersion": 2,
+                        "form": {
+                          "baselineEmploymentCount": 120,
+                          "periodEmploymentCount": 110,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "已核实并修正人数说明",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "submittedAt": "2026-11-02T05:00:00.000Z",
+                        "submittedBy": "1008",
+                        "result": "SUBMITTED_CITY",
+                        "filingId": "9",
+                        "filingVersion": 1
+                      },
+                      {
+                        "submissionVersion": 1,
+                        "form": {
+                          "baselineEmploymentCount": 120,
+                          "periodEmploymentCount": 112,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "本期有员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "submittedAt": "2026-10-30T05:20:00.000Z",
+                        "submittedBy": "1008",
+                        "result": "SUBMITTED_CITY",
+                        "filingId": "9",
+                        "filingVersion": 1
+                      }
+                    ],
+                    "reviewEvents": [
+                      {
+                        "eventId": "301",
+                        "level": "CITY",
+                        "action": "APPROVE",
+                        "fromStatus": "SUBMITTED_CITY",
+                        "toStatus": "SUBMITTED_PROVINCE",
+                        "submissionVersion": 1,
+                        "reviewerUserId": "102",
+                        "reviewerOrgId": "200",
+                        "reviewerDisplayName": "演示市级审核员",
+                        "reviewedAt": "2026-11-01T05:00:00.000Z",
+                        "comment": null
+                      },
+                      {
+                        "eventId": "302",
+                        "level": "PROVINCE",
+                        "action": "RETURN",
+                        "fromStatus": "SUBMITTED_PROVINCE",
+                        "toStatus": "RETURNED_PROVINCE",
+                        "submissionVersion": 1,
+                        "reviewerUserId": "103",
+                        "reviewerOrgId": "100",
+                        "reviewerDisplayName": "演示省级审核员",
+                        "reviewedAt": "2026-11-01T05:00:00.000Z",
+                        "comment": "请核对人数"
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "仅本企业可读；返回历次不可变提交快照（版本倒序）及审核时间线（时间升序）。仅草稿时两个数组均为空；退回和重报后旧快照与审核动作继续保留。无企业历史导出。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "字段、参数或期次代码无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "BAD_REQUEST",
+              "message": "请求参数不合法",
+              "data": {
+                "fieldErrors": {
+                  "primaryReasonCode": "人数减少时必须选择主要原因"
+                }
+              },
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "未登录或令牌无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "角色、企业数据或备案资格不允许",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "期次或本企业报表不存在",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "窗口不可写、期次不可修改、重复提交或版本冲突",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "CONFLICT",
+              "message": "填报窗口已关闭",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Period": {
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "startAt",
+          "endExclusiveAt",
+          "openAt",
+          "closeAt",
+          "demo",
+          "legacy",
+          "currentVersion",
+          "windowStatus"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endExclusiveAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "closeAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "demo": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "windowStatus": {
+            "type": "string",
+            "enum": [
+              "UNAVAILABLE",
+              "NOT_OPEN",
+              "OPEN",
+              "CLOSED"
+            ]
+          }
+        }
+      },
+      "EnterprisePeriod": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Period"
+          },
+          {
+            "type": "object",
+            "required": [
+              "filingEligible",
+              "canWrite",
+              "blockedReason"
+            ],
+            "properties": {
+              "filingEligible": {
+                "type": "boolean"
+              },
+              "canWrite": {
+                "type": "boolean",
+                "description": "RETURNED_CITY/RETURNED_PROVINCE 可在原窗口关闭后继续修改和重报，但仍须当前备案 APPROVED；其他期次沿用 W3 窗口规则。"
+              },
+              "blockedReason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  null,
+                  "LEGACY_PERIOD",
+                  "ALREADY_SUBMITTED",
+                  "FILING_NOT_APPROVED",
+                  "WINDOW_NOT_OPEN",
+                  "WINDOW_CLOSED"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "EnterprisePeriodList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnterprisePeriod"
+            }
+          }
+        }
+      },
+      "ReportForm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "otherReason",
+          "primaryReasonDetail",
+          "secondaryReasonDetail",
+          "tertiaryReasonDetail",
+          "reductionTypeCode",
+          "primaryReasonCode",
+          "secondaryReasonCode",
+          "tertiaryReasonCode"
+        ],
+        "properties": {
+          "baselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "periodEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "otherReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "primaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "secondaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "tertiaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "reductionTypeCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "primaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "secondaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "tertiaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          }
+        }
+      },
+      "SaveReportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "otherReason",
+          "primaryReasonDetail",
+          "secondaryReasonDetail",
+          "tertiaryReasonDetail",
+          "reductionTypeCode",
+          "primaryReasonCode",
+          "secondaryReasonCode",
+          "tertiaryReasonCode"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "periodEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "otherReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "primaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "secondaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "tertiaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "reductionTypeCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "primaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "secondaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "tertiaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          }
+        }
+      },
+      "SubmitReportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ReportView": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "filingEligible",
+          "windowStatus",
+          "canWrite",
+          "blockedReason",
+          "baselineLocked",
+          "form",
+          "updatedAt",
+          "submittedAt",
+          "lockedBaselineEmploymentCount",
+          "latestReturn"
+        ],
+        "properties": {
+          "reportId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "DRAFT",
+              "SUBMITTED_CITY",
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE"
+            ],
+            "description": "当前状态；审核通过只代表省级审核结束，不表示已汇总或已报部委。"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "filingEligible": {
+            "type": "boolean"
+          },
+          "windowStatus": {
+            "type": "string",
+            "enum": [
+              "UNAVAILABLE",
+              "NOT_OPEN",
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "canWrite": {
+            "type": "boolean",
+            "description": "退回状态且备案仍通过时，即使原填报窗口已关闭也可修改并重报；其他状态沿用原窗口规则。"
+          },
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "LEGACY_PERIOD",
+              "ALREADY_SUBMITTED",
+              "FILING_NOT_APPROVED",
+              "WINDOW_NOT_OPEN",
+              "WINDOW_CLOSED"
+            ]
+          },
+          "baselineLocked": {
+            "type": "boolean"
+          },
+          "form": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportForm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lockedBaselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "企业首次成功提交后锁定的基准人数；首次提交前为 null。无本期报表时，前端也可用它预填。"
+          },
+          "latestReturn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestReturn"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "仅当前处于 RETURNED_CITY 或 RETURNED_PROVINCE 时非 null；重报后设为 null，旧退回仍在审核时间线中。"
+          }
+        }
+      },
+      "SubmitReportResult": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "submittedAt"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "SUBMITTED_CITY"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReportListItem": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "periodLabel",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "submittedAt",
+          "latestReturn"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED_CITY",
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE",
+              "DRAFT"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "latestReturn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestReturn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ReportList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportListItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ReportSnapshot": {
+        "type": "object",
+        "required": [
+          "submissionVersion",
+          "form",
+          "submittedAt",
+          "submittedBy",
+          "result",
+          "filingId",
+          "filingVersion"
+        ],
+        "properties": {
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "form": {
+            "$ref": "#/components/schemas/ReportForm"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "const": "SUBMITTED_CITY"
+          },
+          "filingId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "提交时已通过备案的 ID；V4 旧快照没有此字段时返回 null。"
+          },
+          "filingVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "提交时已通过备案版本；V4 旧快照返回 null。"
+          }
+        }
+      },
+      "ReportHistory": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "snapshots",
+          "reviewEvents"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED_CITY",
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE"
+            ]
+          },
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportSnapshot"
+            }
+          },
+          "reviewEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewEvent"
+            },
+            "description": "审核动作按 reviewedAt、eventId 升序；原始提交快照按 submissionVersion 降序。"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "BAD_REQUEST",
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "fieldErrors": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "LatestReturn": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "level",
+          "comment",
+          "reviewedAt",
+          "reviewerUserId",
+          "reviewerDisplayName"
+        ],
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": [
+              "CITY",
+              "PROVINCE"
+            ]
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewerUserId": {
+            "type": "string"
+          },
+          "reviewerDisplayName": {
+            "type": "string"
+          }
+        }
+      },
+      "ReviewEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventId",
+          "level",
+          "action",
+          "fromStatus",
+          "toStatus",
+          "submissionVersion",
+          "reviewerUserId",
+          "reviewerOrgId",
+          "reviewerDisplayName",
+          "reviewedAt",
+          "comment"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "CITY",
+              "PROVINCE"
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "APPROVE",
+              "RETURN"
+            ]
+          },
+          "fromStatus": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED_CITY",
+              "SUBMITTED_PROVINCE"
+            ]
+          },
+          "toStatus": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE"
+            ]
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reviewerUserId": {
+            "type": "string"
+          },
+          "reviewerOrgId": {
+            "type": "string"
+          },
+          "reviewerDisplayName": {
+            "type": "string"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          }
+        }
+      },
+      "ReviewListItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reportId",
+          "periodCode",
+          "periodLabel",
+          "orgId",
+          "enterpriseName",
+          "organizationCode",
+          "cityOrgId",
+          "cityName",
+          "regionCode",
+          "regionName",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "lastActivityAt",
+          "submittedAt",
+          "canReview",
+          "latestReturn"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "organizationCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cityOrgId": {
+            "type": "string"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "regionName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED_CITY",
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "baselineEmploymentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "来自最新已提交快照，不取尚未重报的退回草稿。"
+          },
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "来自最新已提交快照，不取尚未重报的退回草稿。"
+          },
+          "lastActivityAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canReview": {
+            "type": "boolean",
+            "description": "仅当前审核级别、角色、辖区和最新提交版本都满足时为 true；操作接口仍重新校验。"
+          },
+          "latestReturn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestReturn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "ReviewFilters": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "status"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED_CITY",
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE"
+            ]
+          }
+        }
+      },
+      "ReviewList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size",
+          "filters"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewListItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "filters": {
+            "$ref": "#/components/schemas/ReviewFilters"
+          }
+        }
+      },
+      "ReviewDetail": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reportId",
+          "periodCode",
+          "periodLabel",
+          "orgId",
+          "enterpriseName",
+          "organizationCode",
+          "cityOrgId",
+          "cityName",
+          "regionCode",
+          "regionName",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "lastActivityAt",
+          "submittedAt",
+          "canReview",
+          "latestReturn",
+          "form",
+          "currentSnapshot",
+          "snapshots",
+          "reviewEvents"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "orgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "organizationCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cityOrgId": {
+            "type": "string"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "regionName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED_CITY",
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "baselineEmploymentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "来自最新已提交快照，不取尚未重报的退回草稿。"
+          },
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "来自最新已提交快照，不取尚未重报的退回草稿。"
+          },
+          "lastActivityAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canReview": {
+            "type": "boolean",
+            "description": "仅当前审核级别、角色、辖区和最新提交版本都满足时为 true；操作接口仍重新校验。"
+          },
+          "latestReturn": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LatestReturn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "form": {
+            "$ref": "#/components/schemas/ReportForm",
+            "description": "最新已提交快照的完整表单；企业退回后未重报的编辑草稿仅企业自己可见。"
+          },
+          "currentSnapshot": {
+            "$ref": "#/components/schemas/ReportSnapshot",
+            "description": "submissionVersion 最大的不可变提交快照。"
+          },
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportSnapshot"
+            },
+            "description": "按 submissionVersion 降序，旧快照不可改写。"
+          },
+          "reviewEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewEvent"
+            },
+            "description": "按 reviewedAt、eventId 升序。"
+          }
+        }
+      },
+      "ApproveReviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "submissionVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ReturnReviewRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "submissionVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "comment": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500,
+            "description": "可省略或传 null；去首尾空白后为空时按 null 保存。"
+          }
+        }
+      },
+      "ReviewResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "event"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "APPROVED_PROVINCE"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "event": {
+            "$ref": "#/components/schemas/ReviewEvent"
+          }
+        }
+      }
+    }
+  },
+  "x-businessRules": [
+    {
+      "id": "REVIEW_SCOPE",
+      "rule": "城市审核仅可见本市 submissionVersion>0 的报表；省级仅可见本省且至少有一次市级通过记录的报表。默认各级待审，显式状态可只读追溯。越辖区、首次仍在市审的省级详情和不存在记录均按 404。 审核列表人数及详情表单只取最新已提交快照，退回后企业未重报的草稿不暴露给审核员。"
+    },
+    {
+      "id": "REVIEW_VERSION",
+      "rule": "审核动作同时携带 expectedVersion 与 submissionVersion；两者都须与当前报表及最新提交快照相符。每次市/省通过或退回使 currentVersion 加 1，submissionVersion 不变；旧版、乱序、重复审核均 409。"
+    },
+    {
+      "id": "RETURN_COMMENT",
+      "rule": "退回 comment 可省略、为 null 或空白；去首尾空白后空白按 null 保存，最长 500 字。通过接口不接受 comment。无备注也必须形成退回审核记录。"
+    },
+    {
+      "id": "RETURN_WINDOW",
+      "rule": "首次提交必须在原期次开放窗口内。只要该报表已有成功提交且当前为 RETURNED_CITY/RETURNED_PROVINCE，原企业可在窗口关闭后保存、重报；仍须备案 APPROVED、字段及版本合法。没有额外补报截止期，本周不开放新报表的窗口外首次提交。审核中和省级通过的报表 blockedReason=ALREADY_SUBMITTED；退回但备案不通过时为 FILING_NOT_APPROVED。"
+    },
+    {
+      "id": "RESUBMIT",
+      "rule": "退回状态保存仍保留原退回状态；重报 currentVersion 与 submissionVersion 各加 1，追加完整快照，状态回 SUBMITTED_CITY，再次经过市级和省级。旧快照、审核记录不得覆盖。重报后 latestReturn=null，历史退回事件仍可查。"
+    },
+    {
+      "id": "SNAPSHOT_AND_AUDIT",
+      "rule": "V5 新增只追加审核记录，逐条关联 report_id 和 submissionVersion，记录审核级别、动作、前后状态、审核人及组织、审核时显示名、时间和备注；V5 新提交快照固化 filingId/filingVersion，V4 旧快照这些字段可为 null。"
+    },
+    {
+      "id": "PROVINCE_APPROVAL_BOUNDARY",
+      "rule": "APPROVED_PROVINCE 仅表示省级审核通过；汇总、报部委、修订原始数据、删除和报表导出不在第四周审核接口范围。"
+    }
+  ]
+}

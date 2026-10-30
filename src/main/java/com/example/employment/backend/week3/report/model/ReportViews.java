@@ -2,6 +2,8 @@ package com.example.employment.backend.week3.report.model;
 
 import java.time.Instant;
 import java.util.List;
+import com.example.employment.backend.week4.review.model.ReviewViews.LatestReturn;
+import com.example.employment.backend.week4.review.model.ReviewViews.ReviewEvent;
 
 public final class ReportViews {
     private ReportViews() { }
@@ -10,21 +12,23 @@ public final class ReportViews {
             int currentVersion, int submissionVersion, boolean filingEligible,
             String windowStatus, boolean canWrite, String blockedReason,
             boolean baselineLocked, Integer lockedBaselineEmploymentCount,
-            ReportForm form, Instant updatedAt, Instant submittedAt) { }
+            ReportForm form, Instant updatedAt, Instant submittedAt,
+            LatestReturn latestReturn) { }
 
     public record SubmitResult(String reportId, String periodCode, String status,
             int currentVersion, int submissionVersion, Instant submittedAt) { }
 
     public record ListItem(String reportId, String periodCode, String periodLabel,
-            String status, int currentVersion, int submissionVersion, Instant submittedAt) { }
+            String status, int currentVersion, int submissionVersion, Instant submittedAt,
+            LatestReturn latestReturn) { }
 
     public record ReportList(List<ListItem> items, long total, int page, int size) { }
 
     public record Snapshot(int submissionVersion, ReportForm form, Instant submittedAt,
-            String submittedBy, String result) { }
+            String submittedBy, String result, String filingId, Integer filingVersion) { }
 
     public record History(String reportId, String periodCode, String status,
-            List<Snapshot> snapshots) { }
+            List<Snapshot> snapshots, List<ReviewEvent> reviewEvents) { }
 
     public record Option(String code, String name) { }
 

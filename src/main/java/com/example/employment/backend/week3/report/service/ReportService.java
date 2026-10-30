@@ -15,6 +15,7 @@ import com.example.employment.backend.week3.report.model.Report;
 import com.example.employment.backend.week3.report.model.ReportForm;
 import com.example.employment.backend.week3.report.model.ReportViews.*;
 import com.example.employment.backend.week3.report.repository.ReportRepository;
+import com.example.employment.backend.week4.review.repository.ReviewRepository;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -31,14 +32,16 @@ public class ReportService {
     private final FilingService filingService;
     private final FilingRepository filings;
     private final ScopeService scopes;
+    private final ReviewRepository reviews;
 
     public ReportService(ReportRepository reports, PeriodService periods, FilingService filingService,
-            FilingRepository filings, ScopeService scopes) {
+            FilingRepository filings, ScopeService scopes, ReviewRepository reviews) {
         this.reports = reports;
         this.periods = periods;
         this.filingService = filingService;
         this.filings = filings;
         this.scopes = scopes;
+        this.reviews = reviews;
     }
 
     public Options options(UserAccount actor) {
@@ -59,14 +62,18 @@ public class ReportService {
         long orgId = scopes.enterprise(actor).id();
         if (page < 0 || (long) page * size > Integer.MAX_VALUE) throw field("page", "页码不合法");
         if (size < 1 || size > 100) throw field("size", "每页应为1至100条");
-        if (status != null && !List.of("DRAFT", "SUBMITTED_CITY").contains(status)) {
+        if (status != null && !List.of("DRAFT", "SUBMITTED_CITY", "SUBMITTED_PROVINCE",
+                "RETURNED_CITY", "RETURNED_PROVINCE", "APPROVED_PROVINCE").contains(status)) {
             throw field("status", "状态不合法");
         }
         if (periodCode != null) {
             try { periods.visibleToEnterprise(actor, periodCode, false); }
             catch (NotFoundException exception) { throw field("periodCode", "调查期不存在"); }
         }
-        return new ReportList(reports.list(orgId, periodCode, status, size, page * size),
+        return new ReportList(reports.list(orgId, periodCode, status, size, page * size).stream()
+                .map(item -> new ListItem(item.reportId(), item.periodCode(), item.periodLabel(),
+                        item.status(), item.currentVersion(), item.submissionVersion(),
+                        item.submittedAt(), latestReturn(item.reportId(), item.status()))).toList(),
                 reports.count(orgId, periodCode, status), page, size);
     }
 
@@ -127,7 +134,10 @@ public class ReportService {
             throw new ConflictException("报表版本已变化，请刷新后重试");
         }
         int nextSubmission = existing.submissionVersion() + 1;
-        reports.snapshot(existing, nextSubmission, actor.id(), now);
+        var filing = filings.byOrg(orgId, false).orElseThrow(ForbiddenException::new);
+        if (!"APPROVED".equals(filing.status())) throw new ForbiddenException();
+        reports.snapshot(existing, nextSubmission, actor.id(), now,
+                filing.id(), filing.currentVersion());
         filings.audit(actor.id(), orgId, "REPORT_SUBMITTED", periodCode, now);
         return new SubmitResult(Long.toString(existing.id()), periodCode, "SUBMITTED_CITY",
                 expectedVersion + 1, nextSubmission, now.toInstant(ZoneOffset.UTC));
@@ -138,7 +148,7 @@ public class ReportService {
         Report report = reports.byOrgPeriod(actor.orgId(), periodCode, false)
                 .orElseThrow(NotFoundException::new);
         return new History(Long.toString(report.id()), periodCode, report.status(),
-                reports.snapshots(report.id()));
+                reports.snapshots(report.id()), reviews.events(report.id()));
     }
 
     private void checkWrite(SurveyPeriod period, Report report, boolean eligible) {
@@ -223,7 +233,7 @@ public class ReportService {
         return value == null || value.trim().isEmpty() ? null : value.trim();
     }
 
-    private static ReportView view(SurveyPeriod period, Report report,
+    private ReportView view(SurveyPeriod period, Report report,
             boolean eligible, Integer baseline) {
         String blocked = PeriodService.blockedReason(period, eligible,
                 report == null ? null : report.status(), Instant.now());
@@ -233,7 +243,14 @@ public class ReportService {
                 period.windowStatus(Instant.now()), blocked == null, blocked, baseline != null,
                 baseline, report == null ? null : report.form(),
                 report == null ? null : report.updatedAt(),
-                report == null ? null : report.submittedAt());
+                report == null ? null : report.submittedAt(),
+                report == null ? null : latestReturn(Long.toString(report.id()), report.status()));
+    }
+
+    private com.example.employment.backend.week4.review.model.ReviewViews.LatestReturn latestReturn(
+            String reportId, String status) {
+        if (!"RETURNED_CITY".equals(status) && !"RETURNED_PROVINCE".equals(status)) return null;
+        return reviews.latestReturn(Long.parseLong(reportId)).orElse(null);
     }
 
     private static LocalDateTime now() {
