@@ -1,0 +1,2001 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 第三周调查期与企业填报接口约定",
+    "version": "0.3.0",
+    "description": "供前端 B、后端 A、数据 C 按同一规则开发第三周调查期与企业填报。项目负责人已授权工作台确定老师原始需求未细化的实现口径，详见同目录《需求歧义与项目自定规则.md》。老师原始需求仍为最高依据；本文件接口已在本机与服务器实现并验证。第一、二周接口继续沿用既有契约。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "相对路径；联调环境地址由项目组单独提供"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "省级调查期"
+    },
+    {
+      "name": "企业填报"
+    }
+  ],
+  "x-contractStatus": "DEPLOYED_SERVER_VERIFIED",
+  "x-existingEndpoints": [
+    "POST /auth/login",
+    "GET /auth/me",
+    "GET /meta/regions",
+    "GET /enterprise/filing",
+    "GET /province/filings/periods"
+  ],
+  "x-frontendFlow": [
+    "省级登录后管理调查期。先 GET /province/periods，再 POST 新增或 PUT 修改尚未开放且没有报表的期次；时间用 UTC ISO-8601 传输，页面转换为北京时间。",
+    "企业登录后 GET /enterprise/periods，依据 canWrite 与 blockedReason 呈现入口；按钮仅做提示，后端保存和提交时再次检查备案资格及服务器时间窗口。",
+    "进入某期调用 GET /enterprise/reports/{periodCode}；无报表时 currentVersion=0、form=null。PUT 是整份草稿覆盖保存，带 expectedVersion；成功后使用返回的新 currentVersion。",
+    "提交前弹确认框，POST /submit 带 expectedVersion。400 的 data.fieldErrors 显示在字段旁，409 后重新 GET 报表；成功进入 SUBMITTED_CITY，只读并提示待市级审核。",
+    "历史页 GET /enterprise/reports 按期次或状态筛选，点击某期调用 GET /enterprise/reports/{periodCode}/history；企业没有历史导出接口。"
+  ],
+  "x-conventions": {
+    "jsonNaming": "camelCase",
+    "ids": "数据库 ID 以字符串传输；版本与人数为整数",
+    "time": "接口时间均为 ISO-8601 UTC（Z），前端按 Asia/Shanghai 显示；数据库 DATETIME 存 UTC 字面值，精度毫秒",
+    "auth": "所有第三周接口均需 Authorization: Bearer <accessToken>，沿用第一周两小时令牌",
+    "response": "除错误外统一 code/message/data/traceId；Excel 等二进制接口本周不提供",
+    "writeBody": "严格拒绝未约定字段；企业请求不得包含 orgId、审核人或客户端自报状态",
+    "status": "企业报表仅 null、DRAFT、SUBMITTED_CITY；市省审核状态留到第四周",
+    "periodScope": "新增期次属创建者省级组织；公共旧演示期次只读；浏览器不提交省级组织 ID",
+    "reportVersion": "currentVersion 从 0 开始，每次草稿保存或提交加 1；submissionVersion 仅在确认提交时加 1，第三周首次提交为 1",
+    "blockedReasonPriority": [
+      "LEGACY_PERIOD",
+      "ALREADY_SUBMITTED",
+      "FILING_NOT_APPROVED",
+      "WINDOW_NOT_OPEN",
+      "WINDOW_CLOSED"
+    ]
+  },
+  "paths": {
+    "/province/periods": {
+      "get": {
+        "tags": [
+          "省级调查期"
+        ],
+        "summary": "省级查看本省调查期及公共旧演示期次",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ProvincePeriodList"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "code": "DEMO_2026_11",
+                        "label": "2026年11月演示调查期",
+                        "startAt": "2026-10-31T16:00:00Z",
+                        "endExclusiveAt": "2026-11-30T16:00:00Z",
+                        "openAt": "2026-10-30T04:00:00Z",
+                        "closeAt": "2026-11-03T04:00:00Z",
+                        "demo": true,
+                        "legacy": false,
+                        "currentVersion": 1,
+                        "windowStatus": "OPEN"
+                      }
+                    ],
+                    "total": 1
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "按调查期开始时间倒序；不返回其他省份创建的期次。公共旧演示期次只读。"
+      },
+      "post": {
+        "tags": [
+          "省级调查期"
+        ],
+        "summary": "创建调查期与填报窗口",
+        "responses": {
+          "201": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Period"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "code": "DEMO_2026_11",
+                    "label": "2026年11月演示调查期",
+                    "startAt": "2026-10-31T16:00:00Z",
+                    "endExclusiveAt": "2026-11-30T16:00:00Z",
+                    "openAt": "2026-10-30T04:00:00Z",
+                    "closeAt": "2026-11-03T04:00:00Z",
+                    "demo": true,
+                    "legacy": false,
+                    "currentVersion": 1,
+                    "windowStatus": "OPEN"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "期次归令牌所属省级组织，客户端不得传省级组织 ID。code 全局唯一；调查范围和填报窗口各自开始早于结束。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePeriodRequest"
+              },
+              "example": {
+                "code": "DEMO_2026_11",
+                "label": "2026年11月演示调查期",
+                "startAt": "2026-10-31T16:00:00Z",
+                "endExclusiveAt": "2026-11-30T16:00:00Z",
+                "openAt": "2026-10-30T04:00:00Z",
+                "closeAt": "2026-11-03T04:00:00Z",
+                "demo": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/periods/{code}": {
+      "put": {
+        "tags": [
+          "省级调查期"
+        ],
+        "summary": "修改尚未开放且无人填报的调查期",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Period"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "code": "DEMO_2026_11",
+                    "label": "2026年11月演示调查期",
+                    "startAt": "2026-10-31T16:00:00Z",
+                    "endExclusiveAt": "2026-11-30T16:00:00Z",
+                    "openAt": "2026-10-30T04:00:00Z",
+                    "closeAt": "2026-11-03T04:00:00Z",
+                    "demo": true,
+                    "legacy": false,
+                    "currentVersion": 2,
+                    "windowStatus": "OPEN"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "code 不可改；只有服务器时间早于 openAt 且该期没有任何报表才允许修改。公共旧演示期次、已开放或已有报表返回 409；外省或不存在的期次返回 404；expectedVersion 不匹配返回 409。",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePeriodRequest"
+              },
+              "example": {
+                "expectedVersion": 1,
+                "label": "2026年11月演示调查期（调整）",
+                "startAt": "2026-10-31T16:00:00Z",
+                "endExclusiveAt": "2026-11-30T16:00:00Z",
+                "openAt": "2026-10-31T04:00:00Z",
+                "closeAt": "2026-11-03T04:00:00Z"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/enterprise/periods": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "企业查看期次、窗口和填报资格",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EnterprisePeriodList"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "code": "DEMO_2026_11",
+                        "label": "2026年11月演示调查期",
+                        "startAt": "2026-10-31T16:00:00Z",
+                        "endExclusiveAt": "2026-11-30T16:00:00Z",
+                        "openAt": "2026-10-30T04:00:00Z",
+                        "closeAt": "2026-11-03T04:00:00Z",
+                        "demo": true,
+                        "legacy": false,
+                        "currentVersion": 1,
+                        "windowStatus": "OPEN",
+                        "filingEligible": true,
+                        "canWrite": true,
+                        "blockedReason": null
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "仅返回企业所属省期次和公共旧演示期次。后者 legacy=true 且不可填报。canWrite 仅作页面提示；写接口会重查。blockedReason 按规则优先级返回。"
+      }
+    },
+    "/enterprise/reports/options": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "读取减少类型与分层原因字典",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportOptions"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reductionTypes": [
+                      {
+                        "code": "TYPE_NATURAL_ATTRITION",
+                        "name": "自然减员"
+                      }
+                    ],
+                    "reasons": [
+                      {
+                        "code": "REASON_VOLUNTARY_LEAVE",
+                        "name": "自行离职",
+                        "parentTypeCode": "TYPE_NATURAL_ATTRITION",
+                        "parentCode": null,
+                        "children": []
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "示例只展示结构；正式响应必须覆盖老师原始需求中的全部类型和原因，不可由前端硬编码。"
+      }
+    },
+    "/enterprise/reports": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "按期次和状态分页查看本企业报表",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportList"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "reportId": "21",
+                        "periodCode": "DEMO_2026_11",
+                        "periodLabel": "2026年11月演示调查期",
+                        "status": "SUBMITTED_CITY",
+                        "currentVersion": 3,
+                        "submissionVersion": 1,
+                        "submittedAt": "2026-10-30T05:20:00.000Z"
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "仅返回令牌所属企业已有报表，按调查期开始时间倒序。空结果 items=[]；外省或未知期次查询筛选返回 400。不提供企业导出。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "可选；未知期次返回 400"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED_CITY"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ]
+      }
+    },
+    "/enterprise/reports/{periodCode}": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "读取本企业指定期次的报表或空表单",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportView"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "examples": {
+                  "empty": {
+                    "summary": "已有期次但企业尚无报表",
+                    "value": {
+                      "code": "OK",
+                      "message": "",
+                      "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e",
+                      "data": {
+                        "reportId": null,
+                        "periodCode": "DEMO_2026_11",
+                        "status": null,
+                        "currentVersion": 0,
+                        "submissionVersion": 0,
+                        "filingEligible": true,
+                        "windowStatus": "OPEN",
+                        "canWrite": true,
+                        "blockedReason": null,
+                        "baselineLocked": false,
+                        "form": null,
+                        "updatedAt": null,
+                        "submittedAt": null,
+                        "lockedBaselineEmploymentCount": null
+                      }
+                    }
+                  },
+                  "draft": {
+                    "summary": "已有草稿",
+                    "value": {
+                      "code": "OK",
+                      "message": "",
+                      "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e",
+                      "data": {
+                        "reportId": "21",
+                        "periodCode": "DEMO_2026_11",
+                        "status": "DRAFT",
+                        "currentVersion": 2,
+                        "submissionVersion": 0,
+                        "filingEligible": true,
+                        "windowStatus": "OPEN",
+                        "canWrite": true,
+                        "blockedReason": null,
+                        "baselineLocked": false,
+                        "form": {
+                          "baselineEmploymentCount": 120,
+                          "periodEmploymentCount": 112,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "本期有员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "updatedAt": "2026-10-30T05:15:32.123Z",
+                        "submittedAt": null,
+                        "lockedBaselineEmploymentCount": null
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "已存在期次但无报表时 reportId/status/form/updatedAt/submittedAt 为 null，currentVersion=0。未知或外省期次返回 404；baselineLocked 表示企业基准人数已由首次提交固定。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "整份覆盖保存本期草稿",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportView"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "DRAFT",
+                    "currentVersion": 2,
+                    "submissionVersion": 0,
+                    "filingEligible": true,
+                    "windowStatus": "OPEN",
+                    "canWrite": true,
+                    "blockedReason": null,
+                    "baselineLocked": false,
+                    "form": {
+                      "baselineEmploymentCount": 120,
+                      "periodEmploymentCount": 112,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "本期有员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "updatedAt": "2026-10-30T05:15:32.123Z",
+                    "submittedAt": null,
+                    "lockedBaselineEmploymentCount": null
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "整份覆盖草稿；所有表单字段必须出现，null 表示清空。每次成功保存 currentVersion 加 1。已提供的人数、字典代码、成对原因字段须合法；锁定的建档期人数不得改变。未备案 403；窗口外、旧期次、已提交或版本冲突 409。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveReportRequest"
+              },
+              "example": {
+                "expectedVersion": 1,
+                "baselineEmploymentCount": 120,
+                "periodEmploymentCount": 112,
+                "otherReason": "无",
+                "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                "primaryReasonDetail": "本期有员工自行离职",
+                "secondaryReasonCode": null,
+                "secondaryReasonDetail": null,
+                "tertiaryReasonCode": null,
+                "tertiaryReasonDetail": null
+              }
+            }
+          }
+        }
+      }
+    },
+    "/enterprise/reports/{periodCode}/submit": {
+      "post": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "确认并提交本期报表至市级待审",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/SubmitReportResult"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "SUBMITTED_CITY",
+                    "currentVersion": 3,
+                    "submissionVersion": 1,
+                    "submittedAt": "2026-10-30T05:20:00.000Z"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "须先保存草稿。再次校验备案资格、服务器窗口、expectedVersion、人数、其他原因与减少条件字段；首次成功提交锁定本企业建档期人数，并生成 submissionVersion=1 的不可变快照。提交后只读、进入市级待审。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitReportRequest"
+              },
+              "example": {
+                "expectedVersion": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    "/enterprise/reports/{periodCode}/history": {
+      "get": {
+        "tags": [
+          "企业填报"
+        ],
+        "summary": "查看本企业该期的只读提交快照",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/ReportHistory"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "SUBMITTED_CITY",
+                    "snapshots": [
+                      {
+                        "submissionVersion": 1,
+                        "form": {
+                          "baselineEmploymentCount": 120,
+                          "periodEmploymentCount": 112,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "本期有员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "submittedAt": "2026-10-30T05:20:00.000Z",
+                        "submittedBy": "1008",
+                        "result": "SUBMITTED_CITY"
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "description": "只读取令牌所属企业该期快照；没有报表返回 404，仅有草稿 snapshots=[]。本周首次提交有 1 份快照，不提供导出。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Period": {
+        "type": "object",
+        "required": [
+          "code",
+          "label",
+          "startAt",
+          "endExclusiveAt",
+          "openAt",
+          "closeAt",
+          "demo",
+          "legacy",
+          "currentVersion",
+          "windowStatus"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endExclusiveAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "closeAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "demo": {
+            "type": "boolean"
+          },
+          "legacy": {
+            "type": "boolean"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "windowStatus": {
+            "type": "string",
+            "enum": [
+              "UNAVAILABLE",
+              "NOT_OPEN",
+              "OPEN",
+              "CLOSED"
+            ]
+          }
+        }
+      },
+      "ProvincePeriodList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Period"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CreatePeriodRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "label",
+          "startAt",
+          "endExclusiveAt",
+          "openAt",
+          "closeAt",
+          "demo"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]{1,32}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endExclusiveAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closeAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "demo": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdatePeriodRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "label",
+          "startAt",
+          "endExclusiveAt",
+          "openAt",
+          "closeAt"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endExclusiveAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "closeAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EnterprisePeriod": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Period"
+          },
+          {
+            "type": "object",
+            "required": [
+              "filingEligible",
+              "canWrite",
+              "blockedReason"
+            ],
+            "properties": {
+              "filingEligible": {
+                "type": "boolean"
+              },
+              "canWrite": {
+                "type": "boolean"
+              },
+              "blockedReason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  null,
+                  "LEGACY_PERIOD",
+                  "ALREADY_SUBMITTED",
+                  "FILING_NOT_APPROVED",
+                  "WINDOW_NOT_OPEN",
+                  "WINDOW_CLOSED"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "EnterprisePeriodList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnterprisePeriod"
+            }
+          }
+        }
+      },
+      "ReasonOption": {
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "parentTypeCode",
+          "parentCode",
+          "children"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "parentTypeCode": {
+            "type": "string"
+          },
+          "parentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code",
+                "name",
+                "parentCode"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "parentCode": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ReportOptions": {
+        "type": "object",
+        "required": [
+          "reductionTypes",
+          "reasons"
+        ],
+        "properties": {
+          "reductionTypes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code",
+                "name"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReasonOption"
+            }
+          }
+        }
+      },
+      "ReportForm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "otherReason",
+          "primaryReasonDetail",
+          "secondaryReasonDetail",
+          "tertiaryReasonDetail",
+          "reductionTypeCode",
+          "primaryReasonCode",
+          "secondaryReasonCode",
+          "tertiaryReasonCode"
+        ],
+        "properties": {
+          "baselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "periodEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "otherReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "primaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "secondaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "tertiaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "reductionTypeCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "primaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "secondaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "tertiaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          }
+        }
+      },
+      "SaveReportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "otherReason",
+          "primaryReasonDetail",
+          "secondaryReasonDetail",
+          "tertiaryReasonDetail",
+          "reductionTypeCode",
+          "primaryReasonCode",
+          "secondaryReasonCode",
+          "tertiaryReasonCode"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "periodEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "otherReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "primaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "secondaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "tertiaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "reductionTypeCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "primaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "secondaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "tertiaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          }
+        }
+      },
+      "SubmitReportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ReportView": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "filingEligible",
+          "windowStatus",
+          "canWrite",
+          "blockedReason",
+          "baselineLocked",
+          "form",
+          "updatedAt",
+          "submittedAt",
+          "lockedBaselineEmploymentCount",
+          "lockedBaselineEmploymentCount"
+        ],
+        "properties": {
+          "reportId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "DRAFT",
+              "SUBMITTED_CITY"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "filingEligible": {
+            "type": "boolean"
+          },
+          "windowStatus": {
+            "type": "string",
+            "enum": [
+              "UNAVAILABLE",
+              "NOT_OPEN",
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "canWrite": {
+            "type": "boolean"
+          },
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              null,
+              "LEGACY_PERIOD",
+              "ALREADY_SUBMITTED",
+              "FILING_NOT_APPROVED",
+              "WINDOW_NOT_OPEN",
+              "WINDOW_CLOSED"
+            ]
+          },
+          "baselineLocked": {
+            "type": "boolean"
+          },
+          "form": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportForm"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lockedBaselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647,
+            "description": "企业首次成功提交后锁定的基准人数；首次提交前为 null。无本期报表时，前端也可用它预填。"
+          }
+        }
+      },
+      "SubmitReportResult": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "submittedAt"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "SUBMITTED_CITY"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReportListItem": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "periodLabel",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "submittedAt"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED_CITY"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ReportList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportListItem"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ReportSnapshot": {
+        "type": "object",
+        "required": [
+          "submissionVersion",
+          "form",
+          "submittedAt",
+          "submittedBy",
+          "result"
+        ],
+        "properties": {
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "form": {
+            "$ref": "#/components/schemas/ReportForm"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "submittedBy": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "const": "SUBMITTED_CITY"
+          }
+        }
+      },
+      "ReportHistory": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "snapshots"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "SUBMITTED_CITY"
+            ]
+          },
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportSnapshot"
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "BAD_REQUEST",
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "fieldErrors": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "字段、参数或期次代码无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "BAD_REQUEST",
+              "message": "请求参数不合法",
+              "data": {
+                "fieldErrors": {
+                  "primaryReasonCode": "人数减少时必须选择主要原因"
+                }
+              },
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "未登录或令牌无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "角色、企业数据或备案资格不允许",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "期次或本企业报表不存在",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "窗口不可写、期次不可修改、重复提交或版本冲突",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            },
+            "example": {
+              "code": "CONFLICT",
+              "message": "填报窗口已关闭",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-dictionaryCoverage": [
+    "减少类型至少覆盖关闭破产、停业整顿、经济性裁员、业务转移、自然减员、正常解除或终止劳动合同、国际因素变化影响、自然灾害、重大事件影响、其他。",
+    "原因至少覆盖产业结构调整、重大技术改革、节能减排与淘汰落后产能、订单不足、原材料涨价、工资社保等用工成本上升、自然减员、经营资金困难、税收政策变化、季节性用工、其他，以及自行离职、工作调动或企业内部调剂、劳动关系转移或劳务派遣等下级项。",
+    "以上是第三周纲领转录的覆盖要求；具体代码、全部条目及父子关系由数据同学按老师原始需求附表复核，前端只消费接口返回值。"
+  ],
+  "x-ruleRegister": "需求歧义与项目自定规则.md；第三周规则已定但尚未实现，老师明确异议时再同步变更",
+  "x-businessRules": [
+    {
+      "id": "PERIOD_SCOPE",
+      "rule": "新增期次归创建者省级组织，code 全局唯一且不可改。省级列表只看本省期次及公共旧演示期次；企业只看所属省期次及公共旧演示期次。组织范围从令牌和组织树取得，客户端不传省级组织 ID；访问外省期次路径按不存在返回 404。第二周备案筛选新增期次只允许本省期次，外省查询代码返回 400。"
+    },
+    {
+      "id": "LEGACY_PERIOD",
+      "rule": "V3 的 DEMO_2026_10 保留为公共只读记录，legacy=true、openAt/closeAt=null、windowStatus=UNAVAILABLE。仍可用于第二周备案筛选，不能修改或创建第三周报表；V4 新增至少两个可填报的匿名演示期次。"
+    },
+    {
+      "id": "PERIOD_TIMES_AND_EDIT",
+      "rule": "调查范围 [startAt,endExclusiveAt) 与填报窗口 [openAt,closeAt) 分别存储，要求各自开始早于结束，不要求窗口处于调查范围内。新 code 用 1–32 位大写字母、数字或下划线，名称最多 80 字。仅在服务器时间早于 openAt 且该期没有任何报表时，省级可携 expectedVersion 修改名称和四个时间；否则 409。本周不提供删除、补报、延期或重开。"
+    },
+    {
+      "id": "WINDOW_AND_ACCESS",
+      "rule": "服务器时钟决定 [openAt,closeAt)，开放瞬间可写，截止瞬间不可写。保存和提交每次重查当前备案 APPROVED 与窗口。角色鉴权通过后按旧期次、已提交、未备案、窗口未开/已关闭的顺序判断第一个阻止原因：未备案 403，其余 409；版本冲突也为 409。canWrite 仅为页面提示；blockedReason 同此优先级。"
+    },
+    {
+      "id": "BASELINE",
+      "rule": "企业首次成功提交报表时锁定建档期就业人数作为本企业后续期次基准；首次提交前草稿可改。以后 GET 预填锁定值，PUT/提交必须保持一致。减员只与该基准比较，不与上一期比较。"
+    },
+    {
+      "id": "OTHER_REASON",
+      "rule": "其他原因按始终必填的自由文本处理；提交时去除首尾空白后不许空，没有其他原因填“无”。草稿允许 null，不代替主要减少原因。"
+    },
+    {
+      "id": "REDUCTION_VALIDATION",
+      "rule": "两项人数为 0–2147483647 的整数，提交时必填。调查期人数低于建档期人数时，减少类型、主要原因和主要原因说明必填；否则减少原因字段均为 null。次要和第三原因的代码与说明分别成对填写或一起为空。所有代码须来自后端完整字典，原因所属类型及下级关系要匹配。"
+    },
+    {
+      "id": "DICTIONARY_SOURCE",
+      "rule": "V4 按老师原始附表录入全部减少类型和原因层级，接口动态返回稳定代码、名称和父级；示例代码只表示 JSON 形状，前端不硬编码，数据同学按原文逐项核对。"
+    },
+    {
+      "id": "REPORT_VERSION_AND_HISTORY",
+      "rule": "一企业一期次一张当前报表。无记录 currentVersion=0，每次整份保存及提交各加 1，写入需 expectedVersion。提交产生 submissionVersion=1 的不可变完整快照，状态 SUBMITTED_CITY；本周不可改写或重复提交。第四周退回重报再递增提交快照版本并保留旧版；本周不提供市省审核或企业导出。"
+    },
+    {
+      "id": "ERRORS_AND_PERIOD_MEANING",
+      "rule": "非法字段及未知查询筛选为 400，未知路径期次/报表为 404；未登录 401、角色或备案资格不符 403、窗口/版本/状态冲突 409。400 用 data.fieldErrors。第二周 periodCode 表示截至期末已备案，第三周报表 periodCode 表示实际填报期次，不据前者推断后者。"
+    }
+  ]
+}

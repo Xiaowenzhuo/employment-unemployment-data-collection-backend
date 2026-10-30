@@ -157,18 +157,20 @@ public class FilingDao {
                 (rs, row) -> rs.getString("name"), code).stream().findFirst();
     }
 
-    public List<Period> periods() {
-        return jdbc.query("SELECT * FROM survey_period ORDER BY start_at DESC",
+    public List<Period> periods(long provinceOrgId) {
+        return jdbc.query("SELECT * FROM survey_period WHERE province_org_id=? OR " +
+                        "province_org_id IS NULL ORDER BY start_at DESC",
                 (rs, row) -> new Period(rs.getString("code"), rs.getString("label"),
                         instant(rs, "start_at"), instant(rs, "end_exclusive_at"),
-                        rs.getBoolean("demo")));
+                        rs.getBoolean("demo")), provinceOrgId);
     }
 
-    public Optional<Period> period(String code) {
-        return jdbc.query("SELECT * FROM survey_period WHERE code=?",
+    public Optional<Period> period(String code, long provinceOrgId) {
+        return jdbc.query("SELECT * FROM survey_period WHERE code=? AND " +
+                        "(province_org_id=? OR province_org_id IS NULL)",
                 (rs, row) -> new Period(rs.getString("code"), rs.getString("label"),
                         instant(rs, "start_at"), instant(rs, "end_exclusive_at"),
-                        rs.getBoolean("demo")), code).stream().findFirst();
+                        rs.getBoolean("demo")), code, provinceOrgId).stream().findFirst();
     }
 
     public List<ListRow> list(long provinceOrgId, List<String> regions, String status,

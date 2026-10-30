@@ -46,8 +46,10 @@ public class FilingRepository {
     }
     public List<OptionRow> options(String category) { return dao.options(category); }
     public Optional<String> optionName(String code) { return dao.optionName(code); }
-    public List<Period> periods() { return dao.periods(); }
-    public Optional<Period> period(String code) { return dao.period(code); }
+    public List<Period> periods(long provinceOrgId) { return dao.periods(provinceOrgId); }
+    public Optional<Period> period(String code, long provinceOrgId) {
+        return dao.period(code, provinceOrgId);
+    }
     public List<ListRow> list(long provinceId, List<String> regions, String status,
             LocalDateTime end, Integer limit, Integer offset) {
         return dao.list(provinceId, regions, status, end, limit, offset);

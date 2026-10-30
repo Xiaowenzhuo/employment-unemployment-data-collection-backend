@@ -264,11 +264,11 @@ class WeekTwoHttpIntegrationTests {
         user(4201, 4200, "w2_city", 2);
         user(5101, 5100, "w2_other_province", 3);
         jdbc.update("""
-                INSERT INTO survey_period VALUES
+                INSERT INTO survey_period (code, label, start_at, end_exclusive_at, demo) VALUES
                 ('W2_TEST_FUTURE','测试未来期次','2020-01-01 00:00:00','2099-01-01 00:00:00',true)
                 """);
         jdbc.update("""
-                INSERT INTO survey_period VALUES
+                INSERT INTO survey_period (code, label, start_at, end_exclusive_at, demo) VALUES
                 ('W2_TEST_PAST','测试历史期次','2000-01-01 00:00:00','2001-01-01 00:00:00',true)
                 """);
     }

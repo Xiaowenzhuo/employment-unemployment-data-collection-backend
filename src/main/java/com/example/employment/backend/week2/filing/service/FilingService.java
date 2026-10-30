@@ -129,8 +129,7 @@ public class FilingService {
     }
 
     public List<Period> periods(UserAccount actor) {
-        scopes.province(actor);
-        return filings.periods();
+        return filings.periods(scopes.province(actor).id());
     }
 
     public ListData list(UserAccount actor, String status, String regionCode,
@@ -273,7 +272,7 @@ public class FilingService {
             if (!"APPROVED".equals(status)) {
                 throw field("periodCode", "调查期仅适用于已通过备案");
             }
-            Period period = filings.period(periodCode)
+            Period period = filings.period(periodCode, province.id())
                     .orElseThrow(() -> field("periodCode", "调查期不存在"));
             end = LocalDateTime.ofInstant(period.endExclusiveAt(), ZoneOffset.UTC);
         }
