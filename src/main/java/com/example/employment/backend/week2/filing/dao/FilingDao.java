@@ -6,7 +6,6 @@ import com.example.employment.backend.week2.filing.model.FilingViews.Period;
 import com.example.employment.backend.week2.filing.model.Profile;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -253,8 +252,8 @@ public class FilingDao {
     }
 
     private Instant instant(ResultSet rs, String field) throws SQLException {
-        Timestamp timestamp = rs.getTimestamp(field);
-        return timestamp == null ? null : timestamp.toLocalDateTime().toInstant(ZoneOffset.UTC);
+        LocalDateTime value = rs.getObject(field, LocalDateTime.class);
+        return value == null ? null : value.toInstant(ZoneOffset.UTC);
     }
 
     public record OptionRow(String code, String parentCode, String name, boolean demo) {

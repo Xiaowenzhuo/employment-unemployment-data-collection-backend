@@ -7,6 +7,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
@@ -62,6 +65,23 @@ class WeekTwoHttpIntegrationTests {
                 .isEqualTo("W2_D");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM user_role ur JOIN user_account u " +
                 "ON u.id=ur.user_id WHERE u.username='w2_first'", Integer.class)).isEqualTo(1);
+        for (int length : new int[] {80, 81, 120}) {
+            String name = "A".repeat(length);
+            String username = "w2_long" + length;
+            var longName = request("POST", "/api/v1/province/enterprise-accounts", province,
+                    account(username, "W2_D", name), Map.of());
+            assertThat(longName.statusCode()).isEqualTo(201);
+            assertThat(body(longName).path("data").path("orgName").asText()).isEqualTo(name);
+            var me = body(request("GET", "/api/v1/auth/me",
+                    login(username, "testPass123"), null, Map.of())).path("data").path("user");
+            assertThat(me.path("orgName").asText()).isEqualTo(name);
+            assertThat(me.path("displayName").asText()).hasSize(Math.min(length, 80));
+        }
+        var tooLongName = request("POST", "/api/v1/province/enterprise-accounts", province,
+                account("w2_long121", "W2_D", "A".repeat(121)), Map.of());
+        assertThat(tooLongName.statusCode()).isEqualTo(400);
+        assertThat(body(tooLongName).path("data").path("fieldErrors").path("orgName").asText())
+                .isNotBlank();
         assertThat(request("POST", "/api/v1/province/enterprise-accounts", province,
                 account("w2_first", "W2_D", "重复"), Map.of()).statusCode()).isEqualTo(409);
         assertThat(request("POST", "/api/v1/province/enterprise-accounts", province,
@@ -114,6 +134,19 @@ class WeekTwoHttpIntegrationTests {
                 "{\"expectedVersion\":0}", Map.of());
         assertThat(submitted.statusCode()).isEqualTo(200);
         assertThat(body(submitted).path("data").path("currentVersion").asInt()).isEqualTo(1);
+        String submittedAt = body(submitted).path("data").path("submittedAt").asText();
+        assertThat(body(request("GET", "/api/v1/enterprise/filing", enterprise, null,
+                Map.of())).path("data").path("submittedAt").asText()).isEqualTo(submittedAt);
+        for (String invalid : new String[] {"0", "-1", "abc"}) {
+            assertThat(request("GET", "/api/v1/enterprise/filing/versions/" + invalid,
+                    enterprise, null, Map.of()).statusCode()).isEqualTo(400);
+            assertThat(request("GET", "/api/v1/province/filings/" + filingId +
+                    "/versions/" + invalid, province, null, Map.of()).statusCode()).isEqualTo(400);
+        }
+        assertThat(request("GET", "/api/v1/enterprise/filing/versions/99", enterprise,
+                null, Map.of()).statusCode()).isEqualTo(404);
+        assertThat(request("GET", "/api/v1/province/filings/" + filingId +
+                "/versions/99", province, null, Map.of()).statusCode()).isEqualTo(404);
         assertThat(request("PUT", "/api/v1/enterprise/profile", enterprise, profile(), Map.of())
                 .statusCode()).isEqualTo(409);
         assertThat(request("POST", "/api/v1/enterprise/filing/submit", enterprise,
@@ -122,6 +155,8 @@ class WeekTwoHttpIntegrationTests {
                 null, Map.of())).path("data");
         assertThat(queue.path("total").asLong()).isEqualTo(1);
         assertThat(queue.path("items").get(0).path("filingId").asText()).isEqualTo(filingId);
+        assertThat(queue.path("items").get(0).path("submittedAt").asText())
+                .isEqualTo(submittedAt);
         assertThat(body(request("GET", "/api/v1/province/filings", otherProvince, null, Map.of()))
                 .path("data").path("total").asLong()).isZero();
         assertThat(request("GET", "/api/v1/province/filings/" + filingId,
@@ -152,10 +187,19 @@ class WeekTwoHttpIntegrationTests {
                 .isEqualTo("演示企业甲");
         assertThat(request("POST", "/api/v1/province/filings/" + filingId + "/approve",
                 province, "{\"expectedVersion\":1}", Map.of()).statusCode()).isEqualTo(409);
-        assertThat(request("POST", "/api/v1/province/filings/" + filingId + "/approve",
-                province, "{\"expectedVersion\":2}", Map.of()).statusCode()).isEqualTo(200);
-        assertThat(body(request("GET", "/api/v1/enterprise/filing", enterprise,
-                null, Map.of())).path("data").path("canReport").asBoolean()).isTrue();
+        var approvedReview = request("POST", "/api/v1/province/filings/" + filingId + "/approve",
+                province, "{\"expectedVersion\":2}", Map.of());
+        assertThat(approvedReview.statusCode()).isEqualTo(200);
+        String reviewedAt = body(approvedReview).path("data").path("reviewedAt").asText();
+        var approvedStatus = body(request("GET", "/api/v1/enterprise/filing", enterprise,
+                null, Map.of())).path("data");
+        assertThat(approvedStatus.path("canReport").asBoolean()).isTrue();
+        assertThat(approvedStatus.path("reviewedAt").asText()).isEqualTo(reviewedAt);
+        assertThat(body(request("GET", "/api/v1/enterprise/filing/versions/2", enterprise,
+                null, Map.of())).path("data").path("reviewedAt").asText()).isEqualTo(reviewedAt);
+        assertThat(body(request("GET", "/api/v1/province/filings/" + filingId,
+                province, null, Map.of())).path("data").path("reviewedAt").asText())
+                .isEqualTo(reviewedAt);
         assertThat(jdbc.queryForObject("SELECT name FROM org_unit WHERE id=?",
                 String.class, Long.parseLong(orgId))).isEqualTo("演示企业甲修订");
 
@@ -164,6 +208,8 @@ class WeekTwoHttpIntegrationTests {
         assertThat(approved.path("total").asLong()).isEqualTo(1);
         assertThat(approved.path("items").get(0).path("enterpriseName").asText())
                 .isEqualTo("演示企业甲修订");
+        assertThat(approved.path("items").get(0).path("reviewedAt").asText())
+                .isEqualTo(reviewedAt);
         assertThat(body(request("GET", "/api/v1/province/filings?status=APPROVED" +
                 "&periodCode=W2_TEST_PAST", province, null, Map.of()))
                 .path("data").path("total").asLong()).isZero();
@@ -174,8 +220,13 @@ class WeekTwoHttpIntegrationTests {
                 province, null, Map.of()).statusCode()).isEqualTo(400);
         assertThat(request("GET", "/api/v1/province/filings?status=APPROVED&periodCode=UNKNOWN",
                 province, null, Map.of()).statusCode()).isEqualTo(400);
-        assertThat(body(request("GET", "/api/v1/province/filings/periods", province,
-                null, Map.of())).path("data").toString()).contains("DEMO_2026_10");
+        var periods = body(request("GET", "/api/v1/province/filings/periods", province,
+                null, Map.of())).path("data");
+        var demoPeriod = periods.valueStream().filter(p -> "DEMO_2026_10".equals(
+                p.path("code").asText())).findFirst().orElseThrow();
+        assertThat(demoPeriod.path("startAt").asText()).isEqualTo("2026-09-30T16:00:00Z");
+        assertThat(demoPeriod.path("endExclusiveAt").asText())
+                .isEqualTo("2026-10-31T16:00:00Z");
 
         var excel = requestBytes("/api/v1/province/filings/export?regionCode=W2_C",
                 province);
@@ -186,6 +237,10 @@ class WeekTwoHttpIntegrationTests {
             assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("组织机构代码");
             assertThat(sheet.getRow(1).getCell(1).getStringCellValue()).isEqualTo("演示企业甲修订");
             assertThat(sheet.getRow(1).getCell(2).getStringCellValue()).contains("演示区县");
+            assertThat(sheet.getRow(1).getCell(12).getStringCellValue()).isEqualTo(
+                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                            .withZone(ZoneId.of("Asia/Shanghai"))
+                            .format(Instant.parse(reviewedAt)));
         }
         var emptyExcel = requestBytes("/api/v1/province/filings/export?regionCode=W2_C2",
                 province);

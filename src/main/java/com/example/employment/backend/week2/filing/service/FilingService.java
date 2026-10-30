@@ -16,6 +16,7 @@ import com.example.employment.backend.week2.shared.repository.RegionScopeReposit
 import com.example.employment.backend.week2.shared.service.ScopeService;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -117,6 +118,7 @@ public class FilingService {
 
     public VersionData ownVersion(UserAccount actor, int version) {
         Org org = scopes.enterprise(actor);
+        validateVersion(version);
         Filing filing = filings.byOrg(org.id(), false).orElseThrow(NotFoundException::new);
         return version(filing.id(), version, org.regionCode());
     }
@@ -178,6 +180,7 @@ public class FilingService {
 
     public VersionData provinceVersion(UserAccount actor, long filingId, int version) {
         Org province = scopes.province(actor);
+        validateVersion(version);
         Filing filing = visible(filingId, province, false);
         return version(filing.id(), version, regions.org(filing.orgId()).orElseThrow().regionCode());
     }
@@ -223,12 +226,15 @@ public class FilingService {
     }
 
     private VersionData version(long id, int version, String regionCode) {
-        if (version < 1) {
-            throw new NotFoundException();
-        }
         FilingVersion v = filings.version(id, version).orElseThrow(NotFoundException::new);
         return new VersionData(FilingService.id(id), version, v.result(), v.profile(),
                 regions.info(regionCode), v.submittedAt(), v.reviewedAt(), v.reason());
+    }
+
+    private void validateVersion(int version) {
+        if (version < 1) {
+            throw field("version", "版本号必须大于0");
+        }
     }
 
     private List<History> history(long id) {
@@ -373,7 +379,9 @@ public class FilingService {
     }
 
     private static String id(long value) { return Long.toString(value); }
-    private static LocalDateTime now() { return LocalDateTime.now(ZoneOffset.UTC); }
+    private static LocalDateTime now() {
+        return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
+    }
     private static FieldErrorException field(String name, String message) {
         return new FieldErrorException(Map.of(name, message));
     }

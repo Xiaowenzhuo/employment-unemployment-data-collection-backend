@@ -39,7 +39,8 @@ public class AccountDao {
                 INSERT INTO user_account
                 (id, org_id, username, password_hash, display_name, enabled, created_at)
                 VALUES (?, ?, ?, ?, ?, true, ?)
-                """, userId, orgId, username, passwordHash, orgName, now);
+                """, userId, orgId, username, passwordHash,
+                orgName.substring(0, Math.min(orgName.length(), 80)), now);
         int assigned = jdbc.update("""
                 INSERT INTO user_role (user_id, role_id)
                 SELECT ?, id FROM `role` WHERE code = 'ENTERPRISE'
