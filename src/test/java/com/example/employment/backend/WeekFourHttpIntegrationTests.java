@@ -190,7 +190,7 @@ class WeekFourHttpIntegrationTests {
         input.put("baselineEmploymentCount", 100);
         input.put("periodEmploymentCount", count);
         input.put("otherReason", "无");
-        input.put("reductionTypeCode", "TYPE_NATURAL_ATTRITION");
+        input.put("reductionTypeCode", "TYPE_OTHER");
         input.put("primaryReasonCode", "REASON_VOLUNTARY_LEAVE");
         input.put("primaryReasonDetail", "员工自行离职");
         input.put("secondaryReasonCode", null);

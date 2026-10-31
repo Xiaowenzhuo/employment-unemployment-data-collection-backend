@@ -453,17 +453,23 @@
                   "data": {
                     "reductionTypes": [
                       {
-                        "code": "TYPE_NATURAL_ATTRITION",
-                        "name": "自然减员"
+                        "code": "TYPE_OTHER",
+                        "name": "其他"
                       }
                     ],
                     "reasons": [
                       {
-                        "code": "REASON_VOLUNTARY_LEAVE",
-                        "name": "自行离职",
-                        "parentTypeCode": "TYPE_NATURAL_ATTRITION",
+                        "code": "REASON_OTHER",
+                        "name": "其他",
+                        "parentTypeCode": "TYPE_OTHER",
                         "parentCode": null,
-                        "children": []
+                        "children": [
+                          {
+                            "code": "REASON_VOLUNTARY_LEAVE",
+                            "name": "自行离职",
+                            "parentCode": "REASON_OTHER"
+                          }
+                        ]
                       }
                     ]
                   },
@@ -690,7 +696,7 @@
                           "baselineEmploymentCount": 120,
                           "periodEmploymentCount": 112,
                           "otherReason": "无",
-                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "reductionTypeCode": "TYPE_OTHER",
                           "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
                           "primaryReasonDetail": "本期有员工自行离职",
                           "secondaryReasonCode": null,
@@ -789,7 +795,7 @@
                       "baselineEmploymentCount": 120,
                       "periodEmploymentCount": 112,
                       "otherReason": "无",
-                      "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                      "reductionTypeCode": "TYPE_OTHER",
                       "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
                       "primaryReasonDetail": "本期有员工自行离职",
                       "secondaryReasonCode": null,
@@ -846,7 +852,7 @@
                 "baselineEmploymentCount": 120,
                 "periodEmploymentCount": 112,
                 "otherReason": "无",
-                "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                "reductionTypeCode": "TYPE_OTHER",
                 "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
                 "primaryReasonDetail": "本期有员工自行离职",
                 "secondaryReasonCode": null,
@@ -1002,7 +1008,7 @@
                           "baselineEmploymentCount": 120,
                           "periodEmploymentCount": 112,
                           "otherReason": "无",
-                          "reductionTypeCode": "TYPE_NATURAL_ATTRITION",
+                          "reductionTypeCode": "TYPE_OTHER",
                           "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
                           "primaryReasonDetail": "本期有员工自行离职",
                           "secondaryReasonCode": null,
@@ -1952,8 +1958,8 @@
   },
   "x-dictionaryCoverage": [
     "减少类型至少覆盖关闭破产、停业整顿、经济性裁员、业务转移、自然减员、正常解除或终止劳动合同、国际因素变化影响、自然灾害、重大事件影响、其他。",
-    "原因至少覆盖产业结构调整、重大技术改革、节能减排与淘汰落后产能、订单不足、原材料涨价、工资社保等用工成本上升、自然减员、经营资金困难、税收政策变化、季节性用工、其他，以及自行离职、工作调动或企业内部调剂、劳动关系转移或劳务派遣等下级项。",
-    "以上是第三周纲领转录的覆盖要求；具体代码、全部条目及父子关系由数据同学按老师原始需求附表复核，前端只消费接口返回值。"
+    "原因覆盖老师附表的18个唯一名称；其中自行离职、工作调动或企业内部调剂、劳动关系转移或劳务派遣是“其他”的下级，退休、退职、死亡是“自然减员”的下级，国际因素变化是一级原因。",
+    "V6 已按老师原始附表修正 V4 的遗漏和父子关系；前端只消费接口返回值，不硬编码示例。"
   ],
   "x-ruleRegister": "需求歧义与项目自定规则.md；第三周规则已定但尚未实现，老师明确异议时再同步变更",
   "x-businessRules": [
@@ -1987,7 +1993,7 @@
     },
     {
       "id": "DICTIONARY_SOURCE",
-      "rule": "V4 按老师原始附表录入全部减少类型和原因层级，接口动态返回稳定代码、名称和父级；示例代码只表示 JSON 形状，前端不硬编码，数据同学按原文逐项核对。"
+      "rule": "V4 初始字典遗漏四项并误置三个下级原因；V6 已按老师原始附表补齐并修正层级。接口动态返回稳定代码、名称和父级；示例代码只表示 JSON 形状，前端不硬编码。"
     },
     {
       "id": "REPORT_VERSION_AND_HISTORY",

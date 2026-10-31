@@ -7,8 +7,10 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -85,10 +87,32 @@ class WeekThreeHttpIntegrationTests {
                 .doesNotContain("W3_FOREIGN");
         assertThat(call("GET", "/api/v1/enterprise/periods", enterprise, null).body())
                 .doesNotContain("W3_FOREIGN");
-        assertThat(body(call("GET", "/api/v1/enterprise/reports/options", enterprise, null))
-                .path("data").path("reductionTypes").toString()).contains("TYPE_NATURAL_ATTRITION");
-        assertThat(body(call("GET", "/api/v1/enterprise/reports/options", enterprise, null))
-                .path("data").path("reasons").toString()).contains("REASON_VOLUNTARY_LEAVE");
+        JsonNode options = body(call("GET", "/api/v1/enterprise/reports/options", enterprise, null))
+                .path("data");
+        assertThat(options.path("reductionTypes").size()).isEqualTo(10);
+        JsonNode reasons = options.path("reasons");
+        Set<String> names = new HashSet<>();
+        for (JsonNode reason : reasons) {
+            names.add(reason.path("name").asText());
+            for (JsonNode child : reason.path("children")) names.add(child.path("name").asText());
+        }
+        assertThat(names).hasSize(18).contains("国际因素变化", "退休", "退职", "死亡");
+        assertThat(reason(reasons, "REASON_INTERNATIONAL_CHANGE").path("parentTypeCode").asText())
+                .isEqualTo("TYPE_INTERNATIONAL");
+        assertThat(reason(reasons, "REASON_OTHER").path("parentTypeCode").asText())
+                .isEqualTo("TYPE_OTHER");
+        assertThat(reason(reasons, "REASON_NATURAL_ATTRITION").path("parentTypeCode").asText())
+                .isEqualTo("TYPE_NATURAL_ATTRITION");
+        for (String code : Set.of("REASON_VOLUNTARY_LEAVE", "REASON_JOB_TRANSFER",
+                "REASON_LABOR_TRANSFER")) {
+            JsonNode child = reason(reasons, code);
+            assertThat(child.path("parentCode").asText()).isEqualTo("REASON_OTHER");
+        }
+        for (String code : Set.of("REASON_RETIREMENT", "REASON_RETIREMENT_FROM_POST",
+                "REASON_DEATH")) {
+            JsonNode child = reason(reasons, code);
+            assertThat(child.path("parentCode").asText()).isEqualTo("REASON_NATURAL_ATTRITION");
+        }
         assertThat(call("PUT", "/api/v1/enterprise/reports/W3_OPEN", unfiled,
                 form(0, 120, 115, true)).statusCode()).isEqualTo(403);
         assertThat(call("PUT", "/api/v1/enterprise/reports/DEMO_2026_10", enterprise,
@@ -118,6 +142,10 @@ class WeekThreeHttpIntegrationTests {
                 .isEqualTo(400);
         var invalid = form(1, 120, 115, true).replace("REASON_VOLUNTARY_LEAVE", "REASON_FUNDING");
         assertThat(call("PUT", "/api/v1/enterprise/reports/W3_OPEN", enterprise, invalid)
+                .statusCode()).isEqualTo(400);
+        var oldPair = form(1, 120, 115, true).replace("\"reductionTypeCode\":\"TYPE_OTHER\"",
+                "\"reductionTypeCode\":\"TYPE_NATURAL_ATTRITION\"");
+        assertThat(call("PUT", "/api/v1/enterprise/reports/W3_OPEN", enterprise, oldPair)
                 .statusCode()).isEqualTo(400);
         var saved = call("PUT", "/api/v1/enterprise/reports/W3_OPEN", enterprise,
                 form(1, 120, 115, true));
@@ -240,7 +268,7 @@ class WeekThreeHttpIntegrationTests {
         input.put("baselineEmploymentCount", baseline);
         input.put("periodEmploymentCount", current);
         input.put("otherReason", "无");
-        input.put("reductionTypeCode", complete ? "TYPE_NATURAL_ATTRITION" : null);
+        input.put("reductionTypeCode", complete ? "TYPE_OTHER" : null);
         input.put("primaryReasonCode", complete ? "REASON_VOLUNTARY_LEAVE" : null);
         input.put("primaryReasonDetail", complete ? "员工自行离职" : null);
         input.put("secondaryReasonCode", null);
@@ -273,4 +301,14 @@ class WeekThreeHttpIntegrationTests {
     }
 
     private JsonNode body(HttpResponse<String> response) { return json.readTree(response.body()); }
+
+    private JsonNode reason(JsonNode roots, String code) {
+        for (JsonNode root : roots) {
+            if (code.equals(root.path("code").asText())) return root;
+            for (JsonNode child : root.path("children")) {
+                if (code.equals(child.path("code").asText())) return child;
+            }
+        }
+        throw new AssertionError("Missing reason " + code);
+    }
 }

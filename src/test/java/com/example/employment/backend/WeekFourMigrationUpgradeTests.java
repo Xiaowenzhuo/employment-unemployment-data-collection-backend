@@ -10,7 +10,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 class WeekFourMigrationUpgradeTests {
     @Test
-    void v4SnapshotSurvivesV5UpgradeWithoutInventedFilingVersion() {
+    void v4SnapshotSurvivesLaterUpgradesWithoutInventedFilingVersion() {
         String url = "jdbc:h2:mem:w4upgrade_" + UUID.randomUUID().toString().replace("-", "")
                 + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
         var database = new DriverManagerDataSource(url, "sa", "");
