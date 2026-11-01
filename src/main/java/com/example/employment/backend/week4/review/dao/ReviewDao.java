@@ -53,14 +53,14 @@ public class ReviewDao {
 
     public List<ReviewRow> list(String level, long orgId, String periodCode, String status,
             int size, int offset) {
-        return named.query(SELECT + BASE + filters(periodCode, status) +
+        return named.query(SELECT + BASE + " AND r.voided=false" + filters(periodCode, status) +
                 " ORDER BY r.updated_at DESC, r.id DESC LIMIT :size OFFSET :offset",
                 params(level, orgId, periodCode, status).addValue("size", size).addValue("offset", offset),
                 this::row);
     }
 
     public long count(String level, long orgId, String periodCode, String status) {
-        Long value = named.queryForObject("SELECT COUNT(*) " + BASE + filters(periodCode, status),
+        Long value = named.queryForObject("SELECT COUNT(*) " + BASE + " AND r.voided=false" + filters(periodCode, status),
                 params(level, orgId, periodCode, status), Long.class);
         return value == null ? 0 : value;
     }

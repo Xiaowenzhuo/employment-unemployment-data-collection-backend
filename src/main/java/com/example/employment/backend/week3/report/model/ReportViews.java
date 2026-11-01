@@ -13,14 +13,14 @@ public final class ReportViews {
             String windowStatus, boolean canWrite, String blockedReason,
             boolean baselineLocked, Integer lockedBaselineEmploymentCount,
             ReportForm form, Instant updatedAt, Instant submittedAt,
-            LatestReturn latestReturn) { }
+            LatestReturn latestReturn, boolean voided, Instant voidedAt) { }
 
     public record SubmitResult(String reportId, String periodCode, String status,
             int currentVersion, int submissionVersion, Instant submittedAt) { }
 
     public record ListItem(String reportId, String periodCode, String periodLabel,
             String status, int currentVersion, int submissionVersion, Instant submittedAt,
-            LatestReturn latestReturn) { }
+            LatestReturn latestReturn, boolean voided, Instant voidedAt) { }
 
     public record ReportList(List<ListItem> items, long total, int page, int size) { }
 
@@ -28,7 +28,8 @@ public final class ReportViews {
             String submittedBy, String result, String filingId, Integer filingVersion) { }
 
     public record History(String reportId, String periodCode, String status,
-            List<Snapshot> snapshots, List<ReviewEvent> reviewEvents) { }
+            List<Snapshot> snapshots, List<ReviewEvent> reviewEvents,
+            boolean voided, Instant voidedAt) { }
 
     public record Option(String code, String name) { }
 

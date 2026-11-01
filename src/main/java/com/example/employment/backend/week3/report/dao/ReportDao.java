@@ -129,7 +129,8 @@ public class ReportDao {
                 (rs, row) -> new ListItem(Long.toString(rs.getLong("id")),
                         rs.getString("period_code"), rs.getString("period_label"),
                         rs.getString("status"), rs.getInt("current_version"),
-                        rs.getInt("submission_version"), instant(rs, "submitted_at"), null));
+                        rs.getInt("submission_version"), instant(rs, "submitted_at"), null,
+                        rs.getBoolean("voided"), instant(rs, "voided_at")));
     }
 
     public long count(long orgId, String periodCode, String status) {

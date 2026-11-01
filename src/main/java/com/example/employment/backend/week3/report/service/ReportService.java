@@ -16,6 +16,7 @@ import com.example.employment.backend.week3.report.model.ReportForm;
 import com.example.employment.backend.week3.report.model.ReportViews.*;
 import com.example.employment.backend.week3.report.repository.ReportRepository;
 import com.example.employment.backend.week4.review.repository.ReviewRepository;
+import com.example.employment.backend.week5.correction.repository.CorrectionRepository;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -33,15 +34,18 @@ public class ReportService {
     private final FilingRepository filings;
     private final ScopeService scopes;
     private final ReviewRepository reviews;
+    private final CorrectionRepository corrections;
 
     public ReportService(ReportRepository reports, PeriodService periods, FilingService filingService,
-            FilingRepository filings, ScopeService scopes, ReviewRepository reviews) {
+            FilingRepository filings, ScopeService scopes, ReviewRepository reviews,
+            CorrectionRepository corrections) {
         this.reports = reports;
         this.periods = periods;
         this.filingService = filingService;
         this.filings = filings;
         this.scopes = scopes;
         this.reviews = reviews;
+        this.corrections = corrections;
     }
 
     public Options options(UserAccount actor) {
@@ -73,7 +77,8 @@ public class ReportService {
         return new ReportList(reports.list(orgId, periodCode, status, size, page * size).stream()
                 .map(item -> new ListItem(item.reportId(), item.periodCode(), item.periodLabel(),
                         item.status(), item.currentVersion(), item.submissionVersion(),
-                        item.submittedAt(), latestReturn(item.reportId(), item.status()))).toList(),
+                        item.submittedAt(), latestReturn(item.reportId(), item.status()),
+                        item.voided(), item.voidedAt())).toList(),
                 reports.count(orgId, periodCode, status), page, size);
     }
 
@@ -148,7 +153,8 @@ public class ReportService {
         Report report = reports.byOrgPeriod(actor.orgId(), periodCode, false)
                 .orElseThrow(NotFoundException::new);
         return new History(Long.toString(report.id()), periodCode, report.status(),
-                reports.snapshots(report.id()), reviews.events(report.id()));
+                reports.snapshots(report.id()), reviews.events(report.id()),
+                corrections.voided(report.id()), corrections.voidedAt(report.id()));
     }
 
     private void checkWrite(SurveyPeriod period, Report report, boolean eligible) {
@@ -244,7 +250,9 @@ public class ReportService {
                 baseline, report == null ? null : report.form(),
                 report == null ? null : report.updatedAt(),
                 report == null ? null : report.submittedAt(),
-                report == null ? null : latestReturn(Long.toString(report.id()), report.status()));
+                report == null ? null : latestReturn(Long.toString(report.id()), report.status()),
+                report != null && corrections.voided(report.id()),
+                report == null ? null : corrections.voidedAt(report.id()));
     }
 
     private com.example.employment.backend.week4.review.model.ReviewViews.LatestReturn latestReturn(

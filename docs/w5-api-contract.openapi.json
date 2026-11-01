@@ -1,0 +1,3066 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 第五周省级数据管理接口约定",
+    "version": "0.5.0",
+    "description": "依据老师原始需求、第五周省级数据管理协作纲领和已部署的 W1–W4 接口制定；第五周代码及 V7 已于 2026-11-01 在服务器部署并验证。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "相对路径；共享服务器已运行 V7。"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "省级修订"
+    },
+    {
+      "name": "省级作废"
+    },
+    {
+      "name": "省级汇总"
+    },
+    {
+      "name": "省级有效数据"
+    },
+    {
+      "name": "全省账号"
+    },
+    {
+      "name": "Excel 导出"
+    }
+  ],
+  "x-contractStatus": "SERVER_DEPLOYED_VERIFIED",
+  "x-authority": "老师原始需求文档优先；本文件与需求歧义与项目自定规则.md第五周节冻结模糊口径。",
+  "x-compatibility": [
+    "保留 W1–W4 的 /api/v1、Bearer、统一 JSON 外壳、字符串 ID、UTC 时间、字段错误结构。",
+    "APPROVED_PROVINCE 仍表示两级审核完成；修订和作废不产生新提交快照或审核事件，不代表报部委。",
+    "V7 只追加迁移，不修改已部署的 V1–V6。"
+  ],
+  "x-existingEndpointExtensions": [
+    {
+      "path": "GET /province/reports",
+      "change": "默认待审列表语义不变；普通列表排除已作废报表。原审核详情仍展示最新已提交快照；修订/作废追溯使用 W5 corrections 详情。"
+    },
+    {
+      "path": "GET /enterprise/reports, GET /enterprise/reports/{periodCode}, GET /enterprise/reports/{periodCode}/history",
+      "change": "增量加入 voided:boolean 和 voidedAt:UTC|null；企业可只读看到曾报送但现已作废的历史，不能修改已省审通过报表。"
+    }
+  ],
+  "x-businessRules": [
+    "修订仅本省 APPROVED_PROVINCE 且未作废的最新提交版本；建档期人数及原快照不可改。",
+    "修订字段是调查期就业人数和原因相关八字段；原因说明按整份有效表单重新校验。",
+    "作废是独立标记与事件，报表原状态仍为 APPROVED_PROVINCE；本周无恢复接口。",
+    "汇总、有效报表、报送期企业信息和对应 Excel 共用已省审通过且未作废的最新提交版本样本。",
+    "账号 dataStatus 固定指企业当前备案状态；期次、月份、季度筛选表示该企业在相应调查期有报表，草稿也算，和汇总样本不同。",
+    "日期按 Asia/Shanghai 账号创建日，月份季度按调查期 startAt 的北京时间。",
+    "导出所有匹配行，空文件仍有表头，成功为 XLSX，错误为统一 JSON。"
+  ],
+  "paths": {
+    "/province/reports/{reportId}/corrections": {
+      "get": {
+        "tags": [
+          "省级修订"
+        ],
+        "summary": "查看原值、有效值、逐字段修订和作废历史",
+        "description": "本省已省审通过的报表可追溯；即使作废仍能按 ID 查看。原始快照和审核事件不改。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "十进制正整数；不存在或外省返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "修订追溯详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/CorrectionDetail"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "12",
+                    "periodCode": "DEMO_2026_11",
+                    "status": "APPROVED_PROVINCE",
+                    "currentVersion": 8,
+                    "submissionVersion": 2,
+                    "voided": false,
+                    "voidedAt": null,
+                    "originalForm": {
+                      "baselineEmploymentCount": 100,
+                      "periodEmploymentCount": 90,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_OTHER",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "effectiveForm": {
+                      "baselineEmploymentCount": 100,
+                      "periodEmploymentCount": 85,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_OTHER",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "corrections": [
+                      {
+                        "eventId": "41",
+                        "operationId": "40",
+                        "submissionVersion": 2,
+                        "fieldName": "periodEmploymentCount",
+                        "oldValue": 90,
+                        "newValue": 85,
+                        "reason": "更正录入错误",
+                        "actorUserId": "3",
+                        "actorDisplayName": "省级审核员",
+                        "occurredAt": "2026-11-01T02:00:00Z"
+                      }
+                    ],
+                    "voidEvent": null
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          }
+        },
+        "operationId": "getProvinceReportCorrections"
+      },
+      "post": {
+        "tags": [
+          "省级修订"
+        ],
+        "summary": "修订已省审通过报表",
+        "description": "仅本省 APPROVED_PROVINCE 且未作废的最新提交版本；只能修订九个字段。先对叠加后的完整有效表单校验，再逐字段追加日志；成功 currentVersion +1，状态和 submissionVersion 不变。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "十进制正整数；不存在或外省返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectionRequest"
+              },
+              "example": {
+                "expectedVersion": 7,
+                "submissionVersion": 2,
+                "reason": "核对企业原始台账后修正调查期人数",
+                "changes": {
+                  "periodEmploymentCount": 85
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "修订成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/CorrectionResult"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "12",
+                    "status": "APPROVED_PROVINCE",
+                    "currentVersion": 8,
+                    "submissionVersion": 2,
+                    "operationId": "40",
+                    "changedFields": [
+                      "periodEmploymentCount"
+                    ],
+                    "effectiveForm": {
+                      "baselineEmploymentCount": 100,
+                      "periodEmploymentCount": 85,
+                      "otherReason": "无",
+                      "reductionTypeCode": "TYPE_OTHER",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "员工自行离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "operationId": "createProvinceReportCorrection"
+      }
+    },
+    "/province/reports/{reportId}/void": {
+      "post": {
+        "tags": [
+          "省级作废"
+        ],
+        "summary": "逻辑作废省审通过报表",
+        "description": "仅本省 APPROVED_PROVINCE 且未作废；保留原状态、快照、审核及修订历史。成功 currentVersion +1；无恢复接口。",
+        "parameters": [
+          {
+            "name": "reportId",
+            "in": "path",
+            "required": true,
+            "description": "十进制正整数；不存在或外省返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoidRequest"
+              },
+              "example": {
+                "expectedVersion": 8,
+                "submissionVersion": 2,
+                "reason": "确认该期报表重复，保留原始记录供追溯"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "作废成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/VoidResult"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "reportId": "12",
+                    "status": "APPROVED_PROVINCE",
+                    "currentVersion": 9,
+                    "submissionVersion": 2,
+                    "voided": true,
+                    "voidEvent": {
+                      "eventId": "42",
+                      "reason": "历史数据重复",
+                      "actorUserId": "3",
+                      "actorDisplayName": "省级审核员",
+                      "occurredAt": "2026-11-01T03:00:00Z",
+                      "submissionVersion": 2
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        },
+        "operationId": "voidProvinceReport"
+      }
+    },
+    "/province/summaries": {
+      "get": {
+        "tags": [
+          "省级汇总"
+        ],
+        "summary": "按调查期查看省级基础汇总",
+        "description": "只计当前 APPROVED_PROVINCE 且未作废的最新提交版本；按企业所属市汇总，修订后的有效值参与人数合计；空期次返回零。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": true,
+            "description": "本省真实调查期；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "可选，本省地区子树；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "汇总",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/Summary"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "periodCode": "DEMO_2026_11",
+                    "regionCode": null,
+                    "sampleRule": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES",
+                    "enterpriseCount": 1,
+                    "baselineEmploymentTotal": 100,
+                    "periodEmploymentTotal": 85,
+                    "netChange": -15,
+                    "cities": [
+                      {
+                        "cityOrgId": "2",
+                        "cityName": "演示市",
+                        "cityRegionCode": "530100",
+                        "enterpriseCount": 1,
+                        "baselineEmploymentTotal": 100,
+                        "periodEmploymentTotal": 85,
+                        "netChange": -15
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        },
+        "operationId": "getProvincePeriodSummary"
+      }
+    },
+    "/province/data/reports": {
+      "get": {
+        "tags": [
+          "省级有效数据"
+        ],
+        "summary": "分页查看有效报表",
+        "description": "与报表 Excel 共用期次、地区、样本和排序；按 cityOrgId、reportId 升序，人数及原因取有效修订值。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": true,
+            "description": "本省真实调查期；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "可选，本省地区子树；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "从 0 开始。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "description": "默认 20，最多 100。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "有效报表列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EffectiveReportPage"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "reportId": "12",
+                        "periodCode": "DEMO_2026_11",
+                        "submissionVersion": 2,
+                        "currentVersion": 8,
+                        "orgId": "6",
+                        "enterpriseName": "演示企业",
+                        "organizationCode": "A12345678",
+                        "cityOrgId": "2",
+                        "cityName": "演示市",
+                        "regionCode": "530101",
+                        "regionName": "演示区",
+                        "originalForm": {
+                          "baselineEmploymentCount": 100,
+                          "periodEmploymentCount": 90,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_OTHER",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "effectiveForm": {
+                          "baselineEmploymentCount": 100,
+                          "periodEmploymentCount": 85,
+                          "otherReason": "无",
+                          "reductionTypeCode": "TYPE_OTHER",
+                          "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                          "primaryReasonDetail": "员工自行离职",
+                          "secondaryReasonCode": null,
+                          "secondaryReasonDetail": null,
+                          "tertiaryReasonCode": null,
+                          "tertiaryReasonDetail": null
+                        },
+                        "correctionCount": 1,
+                        "lastCorrectedAt": "2026-11-01T02:00:00Z"
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20,
+                    "filters": {
+                      "periodCode": "DEMO_2026_11",
+                      "regionCode": null
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        },
+        "operationId": "listProvinceEffectiveReports"
+      }
+    },
+    "/province/data/enterprise-info": {
+      "get": {
+        "tags": [
+          "省级有效数据"
+        ],
+        "summary": "分页查看报送期关联企业信息",
+        "description": "与企业信息 Excel 共用样本和排序；有冻结备案版本时取该版本，旧快照回退当前资料时显式标来源。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": true,
+            "description": "本省真实调查期；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "可选，本省地区子树；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "从 0 开始。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "description": "默认 20，最多 100。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "关联企业信息列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EnterpriseInfoPage"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "reportId": "12",
+                        "periodCode": "DEMO_2026_11",
+                        "submissionVersion": 2,
+                        "orgId": "6",
+                        "regionCode": "530101",
+                        "regionName": "演示区",
+                        "filingId": "9",
+                        "filingVersion": 1,
+                        "filingSource": "SNAPSHOT_VERSION",
+                        "organizationCode": "A12345678",
+                        "enterpriseName": "演示企业",
+                        "natureCode": "DEMO_NATURE_1_1",
+                        "natureName": "演示性质",
+                        "industryCode": "DEMO_INDUSTRY_1_1",
+                        "industryName": "演示制造业",
+                        "mainBusiness": "演示业务",
+                        "contactName": "联系人",
+                        "addressName": "演示地址",
+                        "postalCode": "650000",
+                        "contactPhone": "13800000000",
+                        "fax": "08710000000",
+                        "email": null
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20,
+                    "filters": {
+                      "periodCode": "DEMO_2026_11",
+                      "regionCode": null
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        },
+        "operationId": "listProvinceEnterpriseInfo"
+      }
+    },
+    "/province/accounts": {
+      "get": {
+        "tags": [
+          "全省账号"
+        ],
+        "summary": "多条件分页查询本省账号",
+        "description": "省、市、企业账号都可出现；省级从令牌确定。createdFrom/To 过滤账号创建时间；dataStatus 固定为当前备案状态。清除筛选时前端去掉查询参数并重取第一页。",
+        "parameters": [
+          {
+            "name": "unitName",
+            "in": "query",
+            "required": false,
+            "description": "单位名称包含匹配，优先当前备案企业名。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "description": "登录账号包含匹配。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userType",
+            "in": "query",
+            "required": false,
+            "description": "账号角色。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PROVINCE",
+                "CITY",
+                "ENTERPRISE"
+              ]
+            }
+          },
+          {
+            "name": "cityCode",
+            "in": "query",
+            "required": false,
+            "description": "本省地市代码，含其下级。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "countyCode",
+            "in": "query",
+            "required": false,
+            "description": "县区代码，含其下级。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "地区代码，含子地区；与地市、县区条件必须一致。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dataStatus",
+            "in": "query",
+            "required": false,
+            "description": "当前企业备案状态；省、市账号为 null。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "NO_FILING",
+                "DRAFT",
+                "PENDING",
+                "RETURNED",
+                "APPROVED"
+              ]
+            }
+          },
+          {
+            "name": "natureCode",
+            "in": "query",
+            "required": false,
+            "description": "当前备案企业性质代码。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "industryCode",
+            "in": "query",
+            "required": false,
+            "description": "当前备案行业代码。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdFrom",
+            "in": "query",
+            "required": false,
+            "description": "北京时间创建日期下限，含当日。",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "createdTo",
+            "in": "query",
+            "required": false,
+            "description": "北京时间创建日期上限，含当日。",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "description": "指定期次有报表的企业账号；未知或外省为 400。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "description": "按调查期 startAt 的北京时间，格式 YYYY-MM。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+            }
+          },
+          {
+            "name": "quarter",
+            "in": "query",
+            "required": false,
+            "description": "按调查期 startAt 的北京时间，格式 YYYY-Q1 至 YYYY-Q4。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-Q[1-4]$"
+            }
+          },
+          {
+            "name": "reportStatus",
+            "in": "query",
+            "required": false,
+            "description": "需同时传 periodCode；无该期报表的账号不匹配。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED_CITY",
+                "SUBMITTED_PROVINCE",
+                "RETURNED_CITY",
+                "RETURNED_PROVINCE",
+                "APPROVED_PROVINCE"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "从 0 开始。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "description": "默认 20，最多 100。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "账号分页结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AccountPage"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "userId": "6",
+                        "unitName": "演示企业",
+                        "username": "demo_enterprise",
+                        "userType": "ENTERPRISE",
+                        "enabled": true,
+                        "provinceCode": "530000",
+                        "provinceName": "云南省",
+                        "cityCode": "530100",
+                        "cityName": "演示市",
+                        "countyCode": "530101",
+                        "countyName": "演示区",
+                        "regionCode": "530101",
+                        "regionName": "演示区",
+                        "dataStatus": "APPROVED",
+                        "reportStatus": "APPROVED_PROVINCE",
+                        "natureCode": "DEMO_NATURE_1_1",
+                        "natureName": "演示性质",
+                        "industryCode": "DEMO_INDUSTRY_1_1",
+                        "industryName": "演示制造业",
+                        "createdAt": "2026-10-01T00:00:00Z"
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20,
+                    "filters": {
+                      "unitName": null,
+                      "username": null,
+                      "userType": null,
+                      "cityCode": null,
+                      "countyCode": null,
+                      "regionCode": null,
+                      "dataStatus": null,
+                      "natureCode": null,
+                      "industryCode": null,
+                      "createdFrom": null,
+                      "createdTo": null,
+                      "periodCode": null,
+                      "month": null,
+                      "quarter": null,
+                      "reportStatus": null
+                    }
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        },
+        "operationId": "listProvinceAccounts"
+      }
+    },
+    "/province/accounts/export": {
+      "get": {
+        "tags": [
+          "Excel 导出"
+        ],
+        "summary": "导出全部匹配账号",
+        "description": "与 GET /province/accounts 使用相同筛选，不接受 page/size；空结果只有表头。",
+        "parameters": [
+          {
+            "name": "unitName",
+            "in": "query",
+            "required": false,
+            "description": "单位名称包含匹配，优先当前备案企业名。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "username",
+            "in": "query",
+            "required": false,
+            "description": "登录账号包含匹配。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userType",
+            "in": "query",
+            "required": false,
+            "description": "账号角色。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PROVINCE",
+                "CITY",
+                "ENTERPRISE"
+              ]
+            }
+          },
+          {
+            "name": "cityCode",
+            "in": "query",
+            "required": false,
+            "description": "本省地市代码，含其下级。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "countyCode",
+            "in": "query",
+            "required": false,
+            "description": "县区代码，含其下级。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "地区代码，含子地区；与地市、县区条件必须一致。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "dataStatus",
+            "in": "query",
+            "required": false,
+            "description": "当前企业备案状态；省、市账号为 null。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "NO_FILING",
+                "DRAFT",
+                "PENDING",
+                "RETURNED",
+                "APPROVED"
+              ]
+            }
+          },
+          {
+            "name": "natureCode",
+            "in": "query",
+            "required": false,
+            "description": "当前备案企业性质代码。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "industryCode",
+            "in": "query",
+            "required": false,
+            "description": "当前备案行业代码。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdFrom",
+            "in": "query",
+            "required": false,
+            "description": "北京时间创建日期下限，含当日。",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "createdTo",
+            "in": "query",
+            "required": false,
+            "description": "北京时间创建日期上限，含当日。",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "description": "指定期次有报表的企业账号；未知或外省为 400。",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": false,
+            "description": "按调查期 startAt 的北京时间，格式 YYYY-MM。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+            }
+          },
+          {
+            "name": "quarter",
+            "in": "query",
+            "required": false,
+            "description": "按调查期 startAt 的北京时间，格式 YYYY-Q1 至 YYYY-Q4。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-Q[1-4]$"
+            }
+          },
+          {
+            "name": "reportStatus",
+            "in": "query",
+            "required": false,
+            "description": "需同时传 periodCode；无该期报表的账号不匹配。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED_CITY",
+                "SUBMITTED_PROVINCE",
+                "RETURNED_CITY",
+                "RETURNED_PROVINCE",
+                "APPROVED_PROVINCE"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "账号查询结果 XLSX",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename*=UTF-8''...xlsx",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "x-filenamePattern": "账号查询_YYYYMMDD.xlsx",
+            "x-columns": [
+              "账号ID",
+              "单位名称",
+              "登录账号",
+              "用户类型",
+              "启用状态",
+              "所属省",
+              "所属市",
+              "所属区县",
+              "所属区域",
+              "备案状态",
+              "报表状态",
+              "企业性质",
+              "行业",
+              "创建时间"
+            ]
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        },
+        "operationId": "exportProvinceAccounts"
+      }
+    },
+    "/province/exports/enterprise-info": {
+      "get": {
+        "tags": [
+          "Excel 导出"
+        ],
+        "summary": "按报送期导出企业信息",
+        "description": "与 GET /province/data/enterprise-info 使用相同筛选、样本、排序和备案来源；不受分页影响，空结果只有表头。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": true,
+            "description": "本省真实调查期；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "可选，本省地区子树；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "报送期企业信息 XLSX",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename*=UTF-8''...xlsx",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "x-filenamePattern": "企业信息_期次代码.xlsx",
+            "x-columns": [
+              "调查期",
+              "报表ID",
+              "提交版本",
+              "企业ID",
+              "组织机构代码",
+              "企业名称",
+              "地区",
+              "企业性质",
+              "所属行业",
+              "主要经营业务",
+              "联系人",
+              "联系地址",
+              "邮政编码",
+              "联系电话",
+              "传真",
+              "邮箱",
+              "备案来源",
+              "备案ID",
+              "备案版本"
+            ]
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        },
+        "operationId": "exportProvinceEnterpriseInfo"
+      }
+    },
+    "/province/exports/reports": {
+      "get": {
+        "tags": [
+          "Excel 导出"
+        ],
+        "summary": "按报送期导出有效企业报表",
+        "description": "与 GET /province/data/reports 使用相同筛选、样本、排序和有效值；不受分页影响，空结果只有表头。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": true,
+            "description": "本省真实调查期；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "可选，本省地区子树；未知或外省返回 400。",
+            "schema": {
+              "type": "string",
+              "maxLength": 12
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "报送期企业报表 XLSX",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename*=UTF-8''...xlsx",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "x-filenamePattern": "企业报表_期次代码.xlsx",
+            "x-columns": [
+              "调查期",
+              "报表ID",
+              "提交版本",
+              "企业ID",
+              "企业名称",
+              "组织机构代码",
+              "城市",
+              "地区",
+              "建档期人数",
+              "调查期人数",
+              "净变化",
+              "其他原因",
+              "减少类型",
+              "主要原因",
+              "主要原因说明",
+              "次要原因",
+              "次要原因说明",
+              "第三原因",
+              "第三原因说明",
+              "修订次数",
+              "最近修订时间"
+            ]
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        },
+        "operationId": "exportProvinceEffectiveReports"
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ReportForm": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "otherReason",
+          "reductionTypeCode",
+          "primaryReasonCode",
+          "primaryReasonDetail",
+          "secondaryReasonCode",
+          "secondaryReasonDetail",
+          "tertiaryReasonCode",
+          "tertiaryReasonDetail"
+        ],
+        "properties": {
+          "baselineEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "otherReason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reductionTypeCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "primaryReasonCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "primaryReasonDetail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secondaryReasonCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secondaryReasonDetail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tertiaryReasonCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tertiaryReasonDetail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "与 W4 表单字段一致；原值来自最新提交快照，有效值叠加省级修订。建档期人数不可修订。"
+      },
+      "CorrectionChanges": {
+        "type": "object",
+        "minProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "otherReason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reductionTypeCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "primaryReasonCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "primaryReasonDetail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secondaryReasonCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secondaryReasonDetail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tertiaryReasonCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tertiaryReasonDetail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "仅传实际要修改的字段；缺省保持原值，显式 null 清空。必须至少一项实际变化。"
+      },
+      "CorrectionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "submissionVersion",
+          "reason",
+          "changes"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "服务端 trim 后校验"
+          },
+          "changes": {
+            "$ref": "#/components/schemas/CorrectionChanges"
+          }
+        }
+      },
+      "CorrectionEntry": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "operationId",
+          "submissionVersion",
+          "fieldName",
+          "oldValue",
+          "newValue",
+          "reason",
+          "actorUserId",
+          "actorDisplayName",
+          "occurredAt"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "operationId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "fieldName": {
+            "type": "string",
+            "enum": [
+              "periodEmploymentCount",
+              "otherReason",
+              "reductionTypeCode",
+              "primaryReasonCode",
+              "primaryReasonDetail",
+              "secondaryReasonCode",
+              "secondaryReasonDetail",
+              "tertiaryReasonCode",
+              "tertiaryReasonDetail"
+            ]
+          },
+          "oldValue": {
+            "oneOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "newValue": {
+            "oneOf": [
+              {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "actorUserId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "actorDisplayName": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，带 Z"
+          }
+        }
+      },
+      "VoidEvent": {
+        "type": "object",
+        "required": [
+          "eventId",
+          "reason",
+          "actorUserId",
+          "actorDisplayName",
+          "occurredAt",
+          "submissionVersion"
+        ],
+        "properties": {
+          "eventId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "actorUserId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "actorDisplayName": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，带 Z"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          }
+        }
+      },
+      "CorrectionDetail": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "voided",
+          "voidedAt",
+          "originalForm",
+          "effectiveForm",
+          "corrections",
+          "voidEvent"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "APPROVED_PROVINCE"
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "voided": {
+            "type": "boolean"
+          },
+          "voidedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC，带 Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "originalForm": {
+            "$ref": "#/components/schemas/ReportForm"
+          },
+          "effectiveForm": {
+            "$ref": "#/components/schemas/ReportForm"
+          },
+          "corrections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CorrectionEntry"
+            }
+          },
+          "voidEvent": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/VoidEvent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CorrectionResult": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "operationId",
+          "changedFields",
+          "effectiveForm"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "status": {
+            "type": "string",
+            "const": "APPROVED_PROVINCE"
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "operationId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "changedFields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "effectiveForm": {
+            "$ref": "#/components/schemas/ReportForm"
+          }
+        }
+      },
+      "VoidRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "submissionVersion",
+          "reason"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "submissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "服务端 trim 后校验 1–500 字"
+          }
+        }
+      },
+      "VoidResult": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "voided",
+          "voidEvent"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "status": {
+            "type": "string",
+            "const": "APPROVED_PROVINCE"
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "voided": {
+            "type": "boolean",
+            "const": true
+          },
+          "voidEvent": {
+            "$ref": "#/components/schemas/VoidEvent"
+          }
+        }
+      },
+      "CitySummary": {
+        "type": "object",
+        "required": [
+          "cityOrgId",
+          "cityName",
+          "cityRegionCode",
+          "enterpriseCount",
+          "baselineEmploymentTotal",
+          "periodEmploymentTotal",
+          "netChange"
+        ],
+        "properties": {
+          "cityOrgId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "cityRegionCode": {
+            "type": "string"
+          },
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baselineEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "periodEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "netChange": {
+            "type": "integer"
+          }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "periodLabel",
+          "regionCode",
+          "sampleRule",
+          "enterpriseCount",
+          "baselineEmploymentTotal",
+          "periodEmploymentTotal",
+          "netChange",
+          "cities"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "regionCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampleRule": {
+            "type": "string",
+            "const": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES"
+          },
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baselineEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "periodEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "netChange": {
+            "type": "integer"
+          },
+          "cities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CitySummary"
+            }
+          }
+        }
+      },
+      "EffectiveReportRow": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "submissionVersion",
+          "currentVersion",
+          "orgId",
+          "enterpriseName",
+          "organizationCode",
+          "cityOrgId",
+          "cityName",
+          "regionCode",
+          "regionName",
+          "originalForm",
+          "effectiveForm",
+          "correctionCount",
+          "lastCorrectedAt"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "orgId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "organizationCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cityOrgId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "regionName": {
+            "type": "string"
+          },
+          "originalForm": {
+            "$ref": "#/components/schemas/ReportForm"
+          },
+          "effectiveForm": {
+            "$ref": "#/components/schemas/ReportForm"
+          },
+          "correctionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastCorrectedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC，带 Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "EffectiveReportPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size",
+          "filters"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EffectiveReportRow"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "periodCode": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "regionCode": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "EnterpriseInfoRow": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "submissionVersion",
+          "orgId",
+          "regionCode",
+          "regionName",
+          "filingId",
+          "filingVersion",
+          "filingSource",
+          "organizationCode",
+          "enterpriseName",
+          "natureCode",
+          "natureName",
+          "industryCode",
+          "industryName",
+          "mainBusiness",
+          "contactName",
+          "addressName",
+          "postalCode",
+          "contactPhone",
+          "fax",
+          "email"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "orgId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "regionName": {
+            "type": "string"
+          },
+          "filingId": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filingVersion": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filingSource": {
+            "type": "string",
+            "enum": [
+              "SNAPSHOT_VERSION",
+              "CURRENT_FALLBACK",
+              "UNAVAILABLE"
+            ]
+          },
+          "organizationCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enterpriseName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mainBusiness": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contactName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "addressName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "postalCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contactPhone": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fax": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "email": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "description": "一条已省审通过、未作废报表对应一条企业信息；老快照缺备案版本时显式标注来源。"
+      },
+      "EnterpriseInfoPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size",
+          "filters"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseInfoRow"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "periodCode": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "regionCode": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "AccountRow": {
+        "type": "object",
+        "required": [
+          "userId",
+          "unitName",
+          "username",
+          "userType",
+          "enabled",
+          "provinceCode",
+          "provinceName",
+          "cityCode",
+          "cityName",
+          "countyCode",
+          "countyName",
+          "regionCode",
+          "regionName",
+          "dataStatus",
+          "reportStatus",
+          "natureCode",
+          "natureName",
+          "industryCode",
+          "industryName",
+          "createdAt"
+        ],
+        "properties": {
+          "userId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$"
+          },
+          "unitName": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "userType": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "provinceCode": {
+            "type": "string"
+          },
+          "provinceName": {
+            "type": "string"
+          },
+          "cityCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cityName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "countyCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "countyName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "regionName": {
+            "type": "string"
+          },
+          "dataStatus": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "NO_FILING",
+                  "DRAFT",
+                  "PENDING",
+                  "RETURNED",
+                  "APPROVED"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reportStatus": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "DRAFT",
+                  "SUBMITTED_CITY",
+                  "SUBMITTED_PROVINCE",
+                  "RETURNED_CITY",
+                  "RETURNED_PROVINCE",
+                  "APPROVED_PROVINCE"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，带 Z"
+          }
+        }
+      },
+      "AccountFilters": {
+        "type": "object",
+        "properties": {
+          "unitName": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "username": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "userType": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cityCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "countyCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "regionCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataStatus": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdFrom": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdTo": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "periodCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "month": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "quarter": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reportStatus": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AccountPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size",
+          "filters"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountRow"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "filters": {
+            "$ref": "#/components/schemas/AccountFilters"
+          }
+        }
+      },
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "BAD_REQUEST",
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "fieldErrors": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "字段、筛选或参数不合法",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "BAD_REQUEST",
+              "message": "字段、筛选或参数不合法",
+              "data": {
+                "fieldErrors": {
+                  "expectedVersion": "版本号不合法"
+                }
+              },
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "未登录或令牌失效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "UNAUTHORIZED",
+              "message": "未登录或令牌失效",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "角色或权限不符",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "FORBIDDEN",
+              "message": "角色或权限不符",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "记录不存在或不在本省范围",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "NOT_FOUND",
+              "message": "记录不存在或不在本省范围",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "状态、版本或重复操作冲突",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "CONFLICT",
+              "message": "状态、版本或重复操作冲突",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      }
+    }
+  }
+}
