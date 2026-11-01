@@ -62,7 +62,7 @@ public class SecurityConfig {
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(List.of("http://localhost:5173", "http://127.0.0.1:5173"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         config.setExposedHeaders(List.of("X-Trace-Id"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

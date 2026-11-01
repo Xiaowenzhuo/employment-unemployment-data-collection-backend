@@ -32,6 +32,7 @@
   "x-compatibility": [
     "沿用 /api/v1、Bearer、统一 JSON 外壳、字符串 ID、UTC Z 时间与 400 data.fieldErrors。",
     "复用第五周已省审通过且未作废的当前有效报表数值；账号查询与第二周备案名单不作为分析样本。",
+    "约定前端来源 http://localhost:5173 和 http://127.0.0.1:5173 的 DELETE 预检及实际请求可通过 CORS；省级令牌和通知版本校验仍照常执行。",
     "第六周新功能已上线；V8 只追加迁移，不修改服务器已经执行的 V1–V7。"
   ],
   "x-businessFlows": [

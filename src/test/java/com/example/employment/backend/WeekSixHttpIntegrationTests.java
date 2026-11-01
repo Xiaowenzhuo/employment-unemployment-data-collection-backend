@@ -118,10 +118,33 @@ class WeekSixHttpIntegrationTests {
         assertThat(call("PUT","/api/v1/province/notices/"+noticeId,province,
                 "{\"expectedVersion\":1,\"title\":\"旧版\",\"content\":\"正文\"}")
                 .statusCode()).isEqualTo(409);
+        String deletePath = "/api/v1/province/notices/"+noticeId+"?expectedVersion=2";
+        var preflight = HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+deletePath))
+                .header("Origin","http://localhost:5173")
+                .header("Access-Control-Request-Method","DELETE")
+                .header("Access-Control-Request-Headers","authorization")
+                .method("OPTIONS",HttpRequest.BodyPublishers.noBody()).build();
+        var preflightResult = client.send(preflight,HttpResponse.BodyHandlers.ofString());
+        assertThat(preflightResult.statusCode()).isEqualTo(200);
+        assertThat(preflightResult.headers().firstValue("Access-Control-Allow-Origin"))
+                .contains("http://localhost:5173");
+        assertThat(preflightResult.headers().firstValue("Access-Control-Allow-Methods"))
+                .hasValueSatisfying(methods -> assertThat(methods).contains("DELETE"));
+        var forbiddenDelete = HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+deletePath))
+                .header("Origin","http://localhost:5173")
+                .header("Authorization","Bearer "+city)
+                .DELETE().build();
+        var denied = client.send(forbiddenDelete,HttpResponse.BodyHandlers.ofString());
+        assertThat(denied.statusCode()).isEqualTo(403);
+        assertThat(json.readTree(denied.body()).path("code").asText()).isEqualTo("FORBIDDEN");
         assertThat(call("DELETE","/api/v1/province/notices/"+noticeId+"?expectedVersion=1",
                 province,null).statusCode()).isEqualTo(409);
-        assertThat(data(call("DELETE","/api/v1/province/notices/"+noticeId+"?expectedVersion=2",
-                province,null)).path("deleted").asBoolean()).isTrue();
+        var browserDelete = HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+deletePath))
+                .header("Origin","http://localhost:5173")
+                .header("Authorization","Bearer "+province)
+                .DELETE().build();
+        assertThat(data(client.send(browserDelete,HttpResponse.BodyHandlers.ofString()))
+                .path("deleted").asBoolean()).isTrue();
         assertThat(call("GET","/api/v1/notices/"+noticeId,enterprise,null)
                 .statusCode()).isEqualTo(404);
         assertThat(data(call("GET","/api/v1/notices",province,null))

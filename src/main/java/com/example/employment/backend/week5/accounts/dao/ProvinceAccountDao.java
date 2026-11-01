@@ -37,7 +37,7 @@ public class ProvinceAccountDao {
                 LEFT JOIN filing_option nature ON nature.code=f.nature_code
                 LEFT JOIN filing_option industry ON industry.code=f.industry_code
                 LEFT JOIN enterprise_report selected ON selected.org_id=o.id
-                    AND selected.period_code=:selectedPeriod
+                    AND selected.period_code=:selectedPeriod AND selected.voided=false
                 WHERE p.id=:provinceId
                 """);
         MapSqlParameterSource args = new MapSqlParameterSource()
@@ -71,7 +71,8 @@ public class ProvinceAccountDao {
         }
         if (periodCodes != null) {
             sql.append(" AND o.org_type='ENTERPRISE' AND EXISTS (SELECT 1 FROM enterprise_report r")
-                    .append(" WHERE r.org_id=o.id AND r.period_code IN (:periodCodes)");
+                    .append(" WHERE r.org_id=o.id AND r.period_code IN (:periodCodes)")
+                    .append(" AND r.voided=false");
             args.addValue("periodCodes", periodCodes);
             if (filters.containsKey("reportStatus")) {
                 sql.append(" AND r.status=:reportStatus");

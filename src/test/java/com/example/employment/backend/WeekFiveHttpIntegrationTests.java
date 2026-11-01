@@ -2,10 +2,12 @@ package com.example.employment.backend;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -77,6 +79,21 @@ class WeekFiveHttpIntegrationTests {
                 .path("enterpriseCount").asInt()).isZero();
         assertThat(data(call("GET", "/api/v1/province/data/reports?periodCode=W5_PERIOD", province, null))
                 .path("total").asInt()).isZero();
+        for (String filter : new String[] {"periodCode=W5_PERIOD", "month=2026-11",
+                "periodCode=W5_PERIOD&reportStatus=APPROVED_PROVINCE"}) {
+            assertThat(data(call("GET", "/api/v1/province/accounts?username=w5_enterprise&"
+                    + filter, province, null)).path("total").asInt()).isZero();
+        }
+        assertThat(data(call("GET", "/api/v1/province/accounts?username=w5_enterprise",
+                province, null)).path("total").asInt()).isEqualTo(1);
+        var exportRequest = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port
+                        + "/api/v1/province/accounts/export?username=w5_enterprise&periodCode=W5_PERIOD"))
+                .header("Authorization", "Bearer " + province).GET().build();
+        var export = client.send(exportRequest, HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(export.statusCode()).isEqualTo(200);
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(export.body()))) {
+            assertThat(workbook.getSheetAt(0).getPhysicalNumberOfRows()).isEqualTo(1);
+        }
         assertThat(data(call("GET", "/api/v1/province/reports?status=APPROVED_PROVINCE", province, null))
                 .path("total").asInt()).isZero();
         assertThat(data(call("GET", "/api/v1/enterprise/reports/W5_PERIOD/history", enterprise, null))

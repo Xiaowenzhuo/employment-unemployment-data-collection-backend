@@ -58,7 +58,7 @@
     "修订字段是调查期就业人数和原因相关八字段；原因说明按整份有效表单重新校验。",
     "作废是独立标记与事件，报表原状态仍为 APPROVED_PROVINCE；本周无恢复接口。",
     "汇总、有效报表、报送期企业信息和对应 Excel 共用已省审通过且未作废的最新提交版本样本。",
-    "账号 dataStatus 固定指企业当前备案状态；期次、月份、季度筛选表示该企业在相应调查期有报表，草稿也算，和汇总样本不同。",
+    "账号 dataStatus 固定指企业当前备案状态；期次、月份、季度筛选表示该企业在相应调查期有未作废报表，草稿也算，和汇总样本不同。作废报表不匹配期次或 reportStatus，列表和账号 Excel 使用同一筛选。",
     "日期按 Asia/Shanghai 账号创建日，月份季度按调查期 startAt 的北京时间。",
     "导出所有匹配行，空文件仍有表头，成功为 XLSX，错误为统一 JSON。"
   ],
@@ -956,7 +956,7 @@
             "name": "periodCode",
             "in": "query",
             "required": false,
-            "description": "指定期次有报表的企业账号；未知或外省为 400。",
+            "description": "指定期次有未作废报表的企业账号，草稿也算；未知或外省为 400。",
             "schema": {
               "type": "string"
             }
@@ -985,7 +985,7 @@
             "name": "reportStatus",
             "in": "query",
             "required": false,
-            "description": "需同时传 periodCode；无该期报表的账号不匹配。",
+            "description": "需同时传 periodCode；无该期未作废报表的账号不匹配。",
             "schema": {
               "type": "string",
               "enum": [
@@ -1250,7 +1250,7 @@
             "name": "periodCode",
             "in": "query",
             "required": false,
-            "description": "指定期次有报表的企业账号；未知或外省为 400。",
+            "description": "指定期次有未作废报表的企业账号，草稿也算；未知或外省为 400。",
             "schema": {
               "type": "string"
             }
@@ -1279,7 +1279,7 @@
             "name": "reportStatus",
             "in": "query",
             "required": false,
-            "description": "需同时传 periodCode；无该期报表的账号不匹配。",
+            "description": "需同时传 periodCode；无该期未作废报表的账号不匹配。",
             "schema": {
               "type": "string",
               "enum": [
