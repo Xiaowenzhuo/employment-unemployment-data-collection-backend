@@ -1,0 +1,1820 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 第六周分析与通知接口约定",
+    "version": "0.6.0",
+    "description": "依据老师原始需求和第六周协作纲领制定；第六周代码已实现，V8 已在共享服务器执行并经本机公网联调。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1",
+      "description": "相对路径；共享服务器已运行至 V8。"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "省级分析"
+    },
+    {
+      "name": "通知浏览"
+    },
+    {
+      "name": "省级通知管理"
+    }
+  ],
+  "x-contractStatus": "SERVER_DEPLOYED_VERIFIED",
+  "x-authority": "老师原始需求文档优先；本文件与需求歧义与项目自定规则.md第六周节共同冻结未细化口径。",
+  "x-compatibility": [
+    "沿用 /api/v1、Bearer、统一 JSON 外壳、字符串 ID、UTC Z 时间与 400 data.fieldErrors。",
+    "复用第五周已省审通过且未作废的当前有效报表数值；账号查询与第二周备案名单不作为分析样本。",
+    "第六周新功能已上线；V8 只追加迁移，不修改服务器已经执行的 V1–V7。"
+  ],
+  "x-businessFlows": [
+    "省级选择真实期次和地区→GET cities；表格与饼图共用城市企业数和占比，空样本显示空态。",
+    "省级选择不同两期及可选地区/两级性质行业→GET compare；同一响应的六项数值供表格和柱/折线图。",
+    "省级从现有期次列表选时间相邻的2–24个真实期次→GET trend；每期都保留，null占比画断点。",
+    "省级 POST 发布→GET /notices 可见→PUT 携版本修改→DELETE 携版本逻辑删除；市和企业仅GET所属省通知。"
+  ],
+  "paths": {
+    "/province/analysis/cities": {
+      "get": {
+        "tags": [
+          "省级分析"
+        ],
+        "operationId": "getProvinceCityShares",
+        "summary": "查看各市企业数量及占比",
+        "x-role": "PROVINCE",
+        "description": "与第五周基础汇总同样本；地区过滤后重算分母。只返回有样本的城市，升序；0样本返回空数组。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": true,
+            "description": "本省真实调查期，必填；未知或外省为400。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "可选本省地区子树，分母随筛选重算。",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "城市数量和饼图数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/CitiesAnalysis"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "periodCode": "YN_2026_10",
+                    "periodLabel": "2026年10月",
+                    "regionCode": null,
+                    "sampleRule": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES",
+                    "totalEnterpriseCount": 2,
+                    "empty": false,
+                    "cities": [
+                      {
+                        "cityOrgId": "200",
+                        "cityName": "A市",
+                        "cityRegionCode": "530100",
+                        "enterpriseCount": 1,
+                        "sharePercent": 50
+                      },
+                      {
+                        "cityOrgId": "300",
+                        "cityName": "B市",
+                        "cityRegionCode": "530200",
+                        "enterpriseCount": 1,
+                        "sharePercent": 50
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
+      }
+    },
+    "/province/analysis/compare": {
+      "get": {
+        "tags": [
+          "省级分析"
+        ],
+        "operationId": "compareProvincePeriods",
+        "summary": "比较两个调查期的六项岗位指标",
+        "x-role": "PROVINCE",
+        "description": "两期独立样本，不求共同企业交集；结果数组依 first/second 请求顺序。筛选属性按每期提交快照备案版本，旧快照可明确回退。",
+        "parameters": [
+          {
+            "name": "firstPeriodCode",
+            "in": "query",
+            "required": true,
+            "description": "第一期，本省真实期次。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          },
+          {
+            "name": "secondPeriodCode",
+            "in": "query",
+            "required": true,
+            "description": "第二期，须与第一期不同。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "本省地区子树。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "natureParentCode",
+            "in": "query",
+            "required": false,
+            "description": "natureParentCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "natureCode",
+            "in": "query",
+            "required": false,
+            "description": "natureCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "industryParentCode",
+            "in": "query",
+            "required": false,
+            "description": "industryParentCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "industryCode",
+            "in": "query",
+            "required": false,
+            "description": "industryCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "两期六项指标",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/CompareAnalysis"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "firstPeriodCode": "YN_2026_10",
+                    "secondPeriodCode": "YN_2026_11",
+                    "filters": {
+                      "regionCode": null,
+                      "natureParentCode": null,
+                      "natureCode": null,
+                      "industryParentCode": null,
+                      "industryCode": null
+                    },
+                    "sampleRule": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES",
+                    "periods": [
+                      {
+                        "position": "FIRST",
+                        "periodCode": "YN_2026_10",
+                        "periodLabel": "2026年10月",
+                        "startAt": "2026-09-30T16:00:00Z",
+                        "metrics": {
+                          "enterpriseCount": 2,
+                          "baselineEmploymentTotal": 150,
+                          "periodEmploymentTotal": 140,
+                          "netChange": -10,
+                          "reductionTotal": 20,
+                          "changePercent": -6.67,
+                          "filingSourceCounts": {
+                            "SNAPSHOT_VERSION": 2,
+                            "CURRENT_FALLBACK": 0,
+                            "UNAVAILABLE": 0
+                          }
+                        }
+                      },
+                      {
+                        "position": "SECOND",
+                        "periodCode": "YN_2026_11",
+                        "periodLabel": "2026年11月",
+                        "startAt": "2026-10-31T16:00:00Z",
+                        "metrics": {
+                          "enterpriseCount": 2,
+                          "baselineEmploymentTotal": 150,
+                          "periodEmploymentTotal": 155,
+                          "netChange": 5,
+                          "reductionTotal": 5,
+                          "changePercent": 3.33,
+                          "filingSourceCounts": {
+                            "SNAPSHOT_VERSION": 2,
+                            "CURRENT_FALLBACK": 0,
+                            "UNAVAILABLE": 0
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
+      }
+    },
+    "/province/analysis/trend": {
+      "get": {
+        "tags": [
+          "省级分析"
+        ],
+        "operationId": "getProvinceChangeTrend",
+        "summary": "查看连续多期岗位变化占比趋势",
+        "x-role": "PROVINCE",
+        "description": "连续指本省真实期次按 startAt、code 排序后的相邻序列，不要求自然月无空档。请求顺序必须升序；无样本期次保留null断点。",
+        "parameters": [
+          {
+            "name": "periodCodes",
+            "in": "query",
+            "required": true,
+            "style": "form",
+            "explode": false,
+            "description": "一个逗号分隔参数，按期次 startAt、code 升序，2–24个不同本省真实且相邻的期次，例如 periodCodes=YN_2026_10,YN_2026_11。",
+            "schema": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 24,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32
+              }
+            }
+          },
+          {
+            "name": "regionCode",
+            "in": "query",
+            "required": false,
+            "description": "本省地区子树。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "natureParentCode",
+            "in": "query",
+            "required": false,
+            "description": "natureParentCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "natureCode",
+            "in": "query",
+            "required": false,
+            "description": "natureCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "industryParentCode",
+            "in": "query",
+            "required": false,
+            "description": "industryParentCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "industryCode",
+            "in": "query",
+            "required": false,
+            "description": "industryCode：两级备案字典代码；父代码匹配所有子项，父子同传须匹配；各期优先取提交快照固化备案版本。",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "多期趋势点",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/TrendAnalysis"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "periodCodes": [
+                      "YN_2026_10",
+                      "YN_2026_11",
+                      "YN_2026_12"
+                    ],
+                    "filters": {
+                      "regionCode": null,
+                      "natureParentCode": null,
+                      "natureCode": null,
+                      "industryParentCode": null,
+                      "industryCode": null
+                    },
+                    "sampleRule": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES",
+                    "points": [
+                      {
+                        "periodCode": "YN_2026_10",
+                        "periodLabel": "2026年10月",
+                        "startAt": "2026-09-30T16:00:00Z",
+                        "hasSample": true,
+                        "metrics": {
+                          "enterpriseCount": 2,
+                          "baselineEmploymentTotal": 150,
+                          "periodEmploymentTotal": 140,
+                          "netChange": -10,
+                          "reductionTotal": 20,
+                          "changePercent": -6.67,
+                          "filingSourceCounts": {
+                            "SNAPSHOT_VERSION": 2,
+                            "CURRENT_FALLBACK": 0,
+                            "UNAVAILABLE": 0
+                          }
+                        }
+                      },
+                      {
+                        "periodCode": "YN_2026_11",
+                        "periodLabel": "2026年11月",
+                        "startAt": "2026-10-31T16:00:00Z",
+                        "hasSample": true,
+                        "metrics": {
+                          "enterpriseCount": 2,
+                          "baselineEmploymentTotal": 150,
+                          "periodEmploymentTotal": 155,
+                          "netChange": 5,
+                          "reductionTotal": 5,
+                          "changePercent": 3.33,
+                          "filingSourceCounts": {
+                            "SNAPSHOT_VERSION": 2,
+                            "CURRENT_FALLBACK": 0,
+                            "UNAVAILABLE": 0
+                          }
+                        }
+                      },
+                      {
+                        "periodCode": "YN_2026_12",
+                        "periodLabel": "2026年12月",
+                        "startAt": "2026-11-30T16:00:00Z",
+                        "hasSample": false,
+                        "metrics": {
+                          "enterpriseCount": 0,
+                          "baselineEmploymentTotal": 0,
+                          "periodEmploymentTotal": 0,
+                          "netChange": 0,
+                          "reductionTotal": 0,
+                          "changePercent": null,
+                          "filingSourceCounts": {
+                            "SNAPSHOT_VERSION": 0,
+                            "CURRENT_FALLBACK": 0,
+                            "UNAVAILABLE": 0
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
+      }
+    },
+    "/notices": {
+      "get": {
+        "tags": [
+          "通知浏览"
+        ],
+        "operationId": "listVisibleNotices",
+        "summary": "浏览自己及本省上级通知",
+        "x-role": [
+          "PROVINCE",
+          "CITY",
+          "ENTERPRISE"
+        ],
+        "description": "本周仅省级发布；省级看本省自己的通知，市/企业只读所属省通知。已删除通知不在列表。按 publishedAt、noticeId 倒序。",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "零基页码，默认 0。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "description": "每页条数，默认 20，最多 100。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "可见通知分页列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/NoticePage"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "noticeId": "41",
+                        "title": "调查期填报安排",
+                        "publisherOrgId": "100",
+                        "publisherUnitName": "云南省级单位",
+                        "publishedAt": "2026-11-01T04:00:00Z",
+                        "updatedAt": null,
+                        "currentVersion": 1,
+                        "canEdit": true,
+                        "canDelete": true
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
+      }
+    },
+    "/notices/{noticeId}": {
+      "get": {
+        "tags": [
+          "通知浏览"
+        ],
+        "operationId": "getVisibleNotice",
+        "summary": "浏览可见通知详情",
+        "x-role": [
+          "PROVINCE",
+          "CITY",
+          "ENTERPRISE"
+        ],
+        "description": "外省、已删除或不存在均404；市级和企业响应 canEdit/canDelete=false。",
+        "parameters": [
+          {
+            "name": "noticeId",
+            "in": "path",
+            "required": true,
+            "description": "通知 ID；不存在、外省或已删除返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$",
+              "description": "十进制正整数字符串"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "通知详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/NoticeDetail"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "noticeId": "41",
+                    "title": "调查期填报安排",
+                    "publisherOrgId": "100",
+                    "publisherUnitName": "云南省级单位",
+                    "publishedAt": "2026-11-01T04:00:00Z",
+                    "updatedAt": null,
+                    "currentVersion": 1,
+                    "canEdit": true,
+                    "canDelete": true,
+                    "content": "请按规定时间填报。",
+                    "publisherUserId": "103"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          }
+        }
+      }
+    },
+    "/province/notices": {
+      "post": {
+        "tags": [
+          "省级通知管理"
+        ],
+        "operationId": "publishProvinceNotice",
+        "summary": "省级发布通知",
+        "x-role": "PROVINCE",
+        "description": "创建即发布；服务端生成发布用户、单位快照及UTC发布时间，currentVersion=1；事务内追加CREATE事件。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeCreate"
+              },
+              "example": {
+                "title": "调查期填报安排",
+                "content": "请按规定时间填报。"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "通知发布成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/NoticeDetail"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "noticeId": "41",
+                    "title": "调查期填报安排",
+                    "publisherOrgId": "100",
+                    "publisherUnitName": "云南省级单位",
+                    "publishedAt": "2026-11-01T04:00:00Z",
+                    "updatedAt": null,
+                    "currentVersion": 1,
+                    "canEdit": true,
+                    "canDelete": true,
+                    "content": "请按规定时间填报。",
+                    "publisherUserId": "103"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          }
+        }
+      }
+    },
+    "/province/notices/{noticeId}": {
+      "put": {
+        "tags": [
+          "省级通知管理"
+        ],
+        "operationId": "updateProvinceNotice",
+        "summary": "省级修改本省通知",
+        "x-role": "PROVINCE",
+        "description": "整份替换标题和正文，保留原发布人、单位与发布时间；版本+1，更新updatedAt并追加UPDATE事件。 已删除后修改返回409。",
+        "parameters": [
+          {
+            "name": "noticeId",
+            "in": "path",
+            "required": true,
+            "description": "通知 ID；不存在、外省或已删除返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$",
+              "description": "十进制正整数字符串"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeUpdate"
+              },
+              "example": {
+                "expectedVersion": 1,
+                "title": "调查期填报安排（更新）",
+                "content": "请在截止前完成填报。"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "通知修改成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/NoticeDetail"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "noticeId": "41",
+                    "title": "调查期填报安排（更新）",
+                    "publisherOrgId": "100",
+                    "publisherUnitName": "云南省级单位",
+                    "publishedAt": "2026-11-01T04:00:00Z",
+                    "updatedAt": "2026-11-01T05:00:00Z",
+                    "currentVersion": 2,
+                    "canEdit": true,
+                    "canDelete": true,
+                    "content": "请在截止前完成填报。",
+                    "publisherUserId": "103"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "省级通知管理"
+        ],
+        "operationId": "deleteProvinceNotice",
+        "summary": "省级逻辑删除本省通知",
+        "x-role": "PROVINCE",
+        "description": "仅标记删除、版本+1并追加DELETE事件；普通列表和详情随即不可见。重复删除或旧版为409。",
+        "parameters": [
+          {
+            "name": "noticeId",
+            "in": "path",
+            "required": true,
+            "description": "通知 ID；不存在、外省或已删除返回 404。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[1-9][0-9]*$",
+              "description": "十进制正整数字符串"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "description": "必填当前版本；与数据库版本不一致返回409。",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "通知删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/NoticeDeleteResult"
+                    },
+                    "traceId": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "noticeId": "41",
+                    "currentVersion": 3,
+                    "deleted": true,
+                    "deletedAt": "2026-11-01T06:00:00Z"
+                  },
+                  "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error409"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "BAD_REQUEST",
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "fieldErrors": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "FilingSourceCounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "SNAPSHOT_VERSION",
+          "CURRENT_FALLBACK",
+          "UNAVAILABLE"
+        ],
+        "properties": {
+          "SNAPSHOT_VERSION": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "CURRENT_FALLBACK": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "UNAVAILABLE": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "计数之和等于 enterpriseCount；旧快照当前备案回退必须单独标记。"
+      },
+      "SixMetrics": {
+        "type": "object",
+        "required": [
+          "enterpriseCount",
+          "baselineEmploymentTotal",
+          "periodEmploymentTotal",
+          "netChange",
+          "reductionTotal",
+          "changePercent",
+          "filingSourceCounts"
+        ],
+        "properties": {
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baselineEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "periodEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "netChange": {
+            "type": "integer"
+          },
+          "reductionTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "changePercent": {
+            "oneOf": [
+              {
+                "type": "number",
+                "multipleOf": 0.01,
+                "description": "百分比数值，例如 -6.67 表示 -6.67%；按 HALF_UP 四舍五入到两位小数；样本为空或基准合计为0时null。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "filingSourceCounts": {
+            "$ref": "#/components/schemas/FilingSourceCounts"
+          }
+        },
+        "description": "各期独立样本。净变化=调查期合计−建档期合计；减员总数=Σmax(基准−有效人数,0)；占比=净变化/建档期合计×100，分母0则null。"
+      },
+      "AnalysisFilters": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "regionCode",
+          "natureParentCode",
+          "natureCode",
+          "industryParentCode",
+          "industryCode"
+        ],
+        "properties": {
+          "regionCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureParentCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "natureCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryParentCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "industryCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CityShare": {
+        "type": "object",
+        "required": [
+          "cityOrgId",
+          "cityName",
+          "cityRegionCode",
+          "enterpriseCount",
+          "sharePercent"
+        ],
+        "properties": {
+          "cityOrgId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "十进制正整数字符串"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "cityRegionCode": {
+            "type": "string"
+          },
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sharePercent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "multipleOf": 0.01,
+            "description": "企业数/当前筛选范围总企业数×100，按 HALF_UP 四舍五入到两位小数。"
+          }
+        }
+      },
+      "CitiesAnalysis": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "periodLabel",
+          "regionCode",
+          "sampleRule",
+          "totalEnterpriseCount",
+          "empty",
+          "cities"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "regionCode": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sampleRule": {
+            "type": "string",
+            "const": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES"
+          },
+          "totalEnterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "empty": {
+            "type": "boolean"
+          },
+          "cities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CityShare"
+            }
+          }
+        },
+        "description": "仅有样本的市，按 cityRegionCode、cityOrgId 升序；饼图以 enterpriseCount 作数值。"
+      },
+      "ComparePeriod": {
+        "type": "object",
+        "required": [
+          "position",
+          "periodCode",
+          "periodLabel",
+          "startAt",
+          "metrics"
+        ],
+        "properties": {
+          "position": {
+            "type": "string",
+            "enum": [
+              "FIRST",
+              "SECOND"
+            ]
+          },
+          "periodCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，带 Z"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/SixMetrics"
+          }
+        }
+      },
+      "CompareAnalysis": {
+        "type": "object",
+        "required": [
+          "firstPeriodCode",
+          "secondPeriodCode",
+          "filters",
+          "sampleRule",
+          "periods"
+        ],
+        "properties": {
+          "firstPeriodCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "secondPeriodCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "filters": {
+            "$ref": "#/components/schemas/AnalysisFilters"
+          },
+          "sampleRule": {
+            "type": "string",
+            "const": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES"
+          },
+          "periods": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "$ref": "#/components/schemas/ComparePeriod"
+            }
+          }
+        }
+      },
+      "TrendPoint": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "periodLabel",
+          "startAt",
+          "hasSample",
+          "metrics"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，带 Z"
+          },
+          "hasSample": {
+            "type": "boolean"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/SixMetrics"
+          }
+        }
+      },
+      "TrendAnalysis": {
+        "type": "object",
+        "required": [
+          "periodCodes",
+          "filters",
+          "sampleRule",
+          "points"
+        ],
+        "properties": {
+          "periodCodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 32
+            }
+          },
+          "filters": {
+            "$ref": "#/components/schemas/AnalysisFilters"
+          },
+          "sampleRule": {
+            "type": "string",
+            "const": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES"
+          },
+          "points": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 24,
+            "items": {
+              "$ref": "#/components/schemas/TrendPoint"
+            }
+          }
+        },
+        "description": "每个所选期次都保留；无样本或分母0时 changePercent=null，前端折线断点。"
+      },
+      "NoticeSummary": {
+        "type": "object",
+        "required": [
+          "noticeId",
+          "title",
+          "publisherOrgId",
+          "publisherUnitName",
+          "publishedAt",
+          "updatedAt",
+          "currentVersion",
+          "canEdit",
+          "canDelete"
+        ],
+        "properties": {
+          "noticeId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "十进制正整数字符串"
+          },
+          "title": {
+            "type": "string"
+          },
+          "publisherOrgId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "十进制正整数字符串"
+          },
+          "publisherUnitName": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，带 Z"
+          },
+          "updatedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC ISO 8601，带 Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NoticeDetail": {
+        "type": "object",
+        "required": [
+          "noticeId",
+          "title",
+          "publisherOrgId",
+          "publisherUnitName",
+          "publishedAt",
+          "updatedAt",
+          "currentVersion",
+          "canEdit",
+          "canDelete",
+          "content",
+          "publisherUserId"
+        ],
+        "properties": {
+          "noticeId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "十进制正整数字符串"
+          },
+          "title": {
+            "type": "string"
+          },
+          "publisherOrgId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "十进制正整数字符串"
+          },
+          "publisherUnitName": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，带 Z"
+          },
+          "updatedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC ISO 8601，带 Z"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          },
+          "content": {
+            "type": "string"
+          },
+          "publisherUserId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "十进制正整数字符串"
+          }
+        }
+      },
+      "NoticePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoticeSummary"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "NoticeCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "content"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "trim 后按 Unicode 码点校验"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "纯文本；trim 后按 Unicode 码点校验，可保留内部换行"
+          }
+        }
+      },
+      "NoticeUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "title",
+          "content"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "整份替换，trim 后按 Unicode 码点校验"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "整份替换，trim 后按 Unicode 码点校验"
+          }
+        }
+      },
+      "NoticeDeleteResult": {
+        "type": "object",
+        "required": [
+          "noticeId",
+          "currentVersion",
+          "deleted",
+          "deletedAt"
+        ],
+        "properties": {
+          "noticeId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]*$",
+            "description": "十进制正整数字符串"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 2
+          },
+          "deleted": {
+            "type": "boolean",
+            "const": true
+          },
+          "deletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，带 Z"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Error400": {
+        "description": "字段、筛选或参数不合法",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "BAD_REQUEST",
+              "message": "字段、筛选或参数不合法",
+              "data": {
+                "fieldErrors": {
+                  "expectedVersion": "版本号不合法"
+                }
+              },
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "未登录或令牌失效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "UNAUTHORIZED",
+              "message": "未登录或令牌失效",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "角色或权限不符",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "FORBIDDEN",
+              "message": "角色或权限不符",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "记录不存在或不在本省范围",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "NOT_FOUND",
+              "message": "记录不存在或不在本省范围",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "状态、版本或重复操作冲突",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            },
+            "example": {
+              "code": "CONFLICT",
+              "message": "状态、版本或重复操作冲突",
+              "data": null,
+              "traceId": "8d9700de-7fc5-407a-81ec-9736d17b6c1e"
+            }
+          }
+        }
+      }
+    }
+  }
+}
