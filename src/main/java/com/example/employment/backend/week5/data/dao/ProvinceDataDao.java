@@ -14,6 +14,7 @@ public class ProvinceDataDao {
         String sql = """
                 SELECT r.id AS report_id, r.org_id, r.period_code, r.current_version,
                     r.submission_version, r.baseline_employment_count, r.period_employment_count,
+                    r.baseline_source_period_code, r.baseline_source_report_id,
                     r.other_reason, r.reduction_type_code, r.primary_reason_code,
                     r.primary_reason_detail, r.secondary_reason_code, r.secondary_reason_detail,
                     r.tertiary_reason_code, r.tertiary_reason_detail,

@@ -29,19 +29,32 @@ public class AnalysisController {
     }
     @GetMapping("/compare")
     public ApiResponse<?> compare(Authentication auth, @RequestParam Map<String, String> params) {
-        only(params, with("firstPeriodCode", "secondPeriodCode"));
+        only(params, with("firstPeriodCode", "secondPeriodCode", "enterpriseOrgId"));
         return ApiResponse.ok(service.compare(user(auth), params.get("firstPeriodCode"),
                 params.get("secondPeriodCode"), filters(params)));
     }
     @GetMapping("/trend")
     public ApiResponse<?> trend(Authentication auth, @RequestParam Map<String, String> params) {
-        only(params, with("periodCodes"));
+        only(params, with("periodCodes", "enterpriseOrgId"));
         return ApiResponse.ok(service.trend(user(auth), params.get("periodCodes"), filters(params)));
+    }
+    @GetMapping("/breakdown")
+    public ApiResponse<?> breakdown(Authentication auth,@RequestParam Map<String,String> params) {
+        only(params,with("periodCode","groupBy"));
+        return ApiResponse.ok(service.breakdown(user(auth),params.get("periodCode"),
+                params.get("groupBy"),filters(params)));
+    }
+    @GetMapping("/enterprises")
+    public ApiResponse<?> enterprises(Authentication auth,@RequestParam Map<String,String> params) {
+        only(params,with("periodCode","enterpriseOrgId","changeDirection","page","size"));
+        return ApiResponse.ok(service.enterprises(user(auth),params.get("periodCode"),
+                params.get("changeDirection"),filters(params),number(params,"page",0),
+                number(params,"size",20)));
     }
     private static Filters filters(Map<String, String> p) {
         return new Filters(optional(p,"regionCode"),optional(p,"natureParentCode"),
                 optional(p,"natureCode"),optional(p,"industryParentCode"),
-                optional(p,"industryCode"));
+                optional(p,"industryCode"),optional(p,"enterpriseOrgId"));
     }
     private static String optional(Map<String, String> p, String key) {
         String value = p.get(key);
@@ -51,6 +64,13 @@ public class AnalysisController {
         var result = new java.util.HashSet<>(ATTRS);
         result.addAll(Set.of(names));
         return result;
+    }
+    private static int number(Map<String,String> params,String name,int fallback) {
+        if (!params.containsKey(name)) return fallback;
+        try { return Integer.parseInt(params.get(name)); }
+        catch (NumberFormatException exception) {
+            throw new FieldErrorException(Map.of(name,"应为整数"));
+        }
     }
     private static void only(Map<String, String> params, Set<String> allowed) {
         for (String key : params.keySet()) if (!allowed.contains(key))

@@ -29,20 +29,21 @@ public class NoticeService {
         this.notices = notices; this.regions = regions; this.scopes = scopes;
     }
     public NoticePage list(UserAccount actor, int page, int size) {
-        long provinceId = visibleProvince(actor);
+        NoticeScope scope = scope(actor);
         if (page < 0 || (long)page * size > Integer.MAX_VALUE)
             throw field("page", "页码不合法");
         if (size < 1 || size > 100) throw field("size", "每页应为1至100条");
-        boolean editable = isProvince(actor);
-        return new NoticePage(notices.list(provinceId,size,page*size).stream()
-                .map(row -> summary(row,editable)).toList(),
-                notices.count(provinceId),page,size);
+        return new NoticePage(notices.list(scope.provinceId(),scope.cityId(),actor.id(),
+                scope.role(),size,page*size).stream()
+                .map(row -> summary(row,canEdit(row,actor,scope))).toList(),
+                notices.count(scope.provinceId(),scope.cityId(),actor.id(),scope.role()),page,size);
     }
     public NoticeDetail detail(UserAccount actor, String rawId) {
-        long provinceId = visibleProvince(actor);
-        NoticeRow row = notices.find(id(rawId),provinceId,false,false)
+        NoticeScope scope = scope(actor);
+        NoticeRow row = notices.find(id(rawId),scope.provinceId(),false,false)
                 .orElseThrow(NotFoundException::new);
-        return detail(row,isProvince(actor));
+        if (!visible(row,actor,scope)) throw new NotFoundException();
+        return detail(row,canEdit(row,actor,scope));
     }
     @Transactional
     public NoticeDetail create(UserAccount actor, String title, String content) {
@@ -51,7 +52,8 @@ public class NoticeService {
         String cleanContent = text(content,"content",2000);
         LocalDateTime now = now();
         long id = notices.nextNoticeId();
-        notices.insert(id,province.id(),actor.id(),actor.orgName(),cleanTitle,cleanContent,now);
+        notices.insert(id,province.id(),actor.id(),actor.orgName(),cleanTitle,cleanContent,
+                now,"PROVINCE",null);
         notices.event(notices.nextEventId(),id,"CREATE",actor.id(),0,1,now);
         return detail(notices.find(id,province.id(),false,false).orElseThrow(),true);
     }
@@ -65,6 +67,7 @@ public class NoticeService {
         long id = id(rawId);
         NoticeRow current = notices.find(id,province.id(),true,true)
                 .orElseThrow(NotFoundException::new);
+        if (!"PROVINCE".equals(current.publisherLevel())) throw new NotFoundException();
         if (current.deleted() || current.currentVersion()!=version) throw conflict();
         LocalDateTime now = now();
         if (notices.update(id,province.id(),version,cleanTitle,cleanContent,now)!=1)
@@ -79,16 +82,62 @@ public class NoticeService {
         long id = id(rawId);
         NoticeRow current = notices.find(id,province.id(),true,true)
                 .orElseThrow(NotFoundException::new);
+        if (!"PROVINCE".equals(current.publisherLevel())) throw new NotFoundException();
         if (current.deleted() || current.currentVersion()!=version) throw conflict();
         LocalDateTime now = now();
         if (notices.delete(id,province.id(),version,now)!=1) throw conflict();
         notices.event(notices.nextEventId(),id,"DELETE",actor.id(),version,version+1,now);
         return new DeleteResult(rawId,version+1,true,now.toInstant(ZoneOffset.UTC));
     }
-    private long visibleProvince(UserAccount actor) {
+    @Transactional
+    public NoticeDetail createCity(UserAccount actor,String title,String content) {
+        NoticeScope scope=scope(actor);
+        if (!"CITY".equals(scope.role())) throw new ForbiddenException();
+        String cleanTitle=text(title,"title",50),cleanContent=text(content,"content",2000);
+        LocalDateTime now=now();
+        long id=notices.nextNoticeId();
+        notices.insert(id,scope.provinceId(),actor.id(),actor.orgName(),
+                cleanTitle,cleanContent,now,"CITY",scope.cityId());
+        notices.event(notices.nextEventId(),id,"CREATE",actor.id(),0,1,now);
+        return detail(notices.find(id,scope.provinceId(),false,false).orElseThrow(),true);
+    }
+    @Transactional
+    public NoticeDetail updateCity(UserAccount actor,String rawId,Integer expected,
+            String title,String content) {
+        NoticeScope scope=scope(actor);
+        if (!"CITY".equals(scope.role())) throw new ForbiddenException();
+        int version=version(expected);
+        String cleanTitle=text(title,"title",50),cleanContent=text(content,"content",2000);
+        long id=id(rawId);
+        NoticeRow current=notices.find(id,scope.provinceId(),true,true)
+                .orElseThrow(NotFoundException::new);
+        if (!canEdit(current,actor,scope)) throw new NotFoundException();
+        if (current.deleted() || current.currentVersion()!=version) throw conflict();
+        LocalDateTime now=now();
+        if (notices.updateCity(id,scope.cityId(),actor.id(),version,cleanTitle,cleanContent,now)!=1)
+            throw conflict();
+        notices.event(notices.nextEventId(),id,"UPDATE",actor.id(),version,version+1,now);
+        return detail(notices.find(id,scope.provinceId(),false,false).orElseThrow(),true);
+    }
+    @Transactional
+    public DeleteResult deleteCity(UserAccount actor,String rawId,Integer expected) {
+        NoticeScope scope=scope(actor);
+        if (!"CITY".equals(scope.role())) throw new ForbiddenException();
+        int version=version(expected), idVersion=version+1;
+        long id=id(rawId);
+        NoticeRow current=notices.find(id,scope.provinceId(),true,true)
+                .orElseThrow(NotFoundException::new);
+        if (!canEdit(current,actor,scope)) throw new NotFoundException();
+        if (current.deleted() || current.currentVersion()!=version) throw conflict();
+        LocalDateTime now=now();
+        if (notices.deleteCity(id,scope.cityId(),actor.id(),version,now)!=1) throw conflict();
+        notices.event(notices.nextEventId(),id,"DELETE",actor.id(),version,idVersion,now);
+        return new DeleteResult(rawId,idVersion,true,now.toInstant(ZoneOffset.UTC));
+    }
+    private NoticeScope scope(UserAccount actor) {
         Org org = regions.org(actor.orgId()).orElseThrow(ForbiddenException::new);
         if (!org.enabled() || !actor.roleCodes().contains(org.type())) throw new ForbiddenException();
-        if ("PROVINCE".equals(org.type())) return org.id();
+        if ("PROVINCE".equals(org.type())) return new NoticeScope(org.id(),null,"PROVINCE");
         Org city = org;
         if ("ENTERPRISE".equals(org.type())) {
             city = parent(org);
@@ -97,23 +146,33 @@ public class NoticeService {
         Org province = parent(city);
         if (!"PROVINCE".equals(province.type()) || !province.enabled())
             throw new ForbiddenException();
-        return province.id();
+        return new NoticeScope(province.id(),city.id(),org.type());
     }
     private Org parent(Org child) {
         if (child.parentId()==null) throw new ForbiddenException();
         return regions.org(child.parentId()).orElseThrow(ForbiddenException::new);
     }
-    private static boolean isProvince(UserAccount actor) {
-        return actor.roleCodes().contains("PROVINCE");
+    private static boolean visible(NoticeRow row,UserAccount actor,NoticeScope scope) {
+        return "PROVINCE".equals(row.publisherLevel()) ||
+                ("CITY".equals(row.publisherLevel()) && scope.cityId()!=null
+                 && scope.cityId().equals(row.cityOrgId())
+                 && ("ENTERPRISE".equals(scope.role()) || row.publisherUserId()==actor.id()));
+    }
+    private static boolean canEdit(NoticeRow row,UserAccount actor,NoticeScope scope) {
+        return ("PROVINCE".equals(scope.role()) && "PROVINCE".equals(row.publisherLevel()))
+                || ("CITY".equals(scope.role()) && "CITY".equals(row.publisherLevel())
+                    && scope.cityId().equals(row.cityOrgId()) && row.publisherUserId()==actor.id());
     }
     private static NoticeSummary summary(NoticeRow row, boolean editable) {
         return new NoticeSummary(Long.toString(row.id()),row.title(),
-                Long.toString(row.provinceOrgId()),row.publisherUnitName(),
+                row.publisherLevel(),Long.toString("CITY".equals(row.publisherLevel())
+                        ? row.cityOrgId() : row.provinceOrgId()),row.publisherUnitName(),
                 row.publishedAt(),row.updatedAt(),row.currentVersion(),editable,editable);
     }
     private static NoticeDetail detail(NoticeRow row, boolean editable) {
         return new NoticeDetail(Long.toString(row.id()),row.title(),
-                Long.toString(row.provinceOrgId()),row.publisherUnitName(),
+                row.publisherLevel(),Long.toString("CITY".equals(row.publisherLevel())
+                        ? row.cityOrgId() : row.provinceOrgId()),row.publisherUnitName(),
                 row.publishedAt(),row.updatedAt(),row.currentVersion(),editable,editable,
                 row.content(),Long.toString(row.publisherUserId()));
     }
@@ -141,10 +200,11 @@ public class NoticeService {
     private static FieldErrorException field(String key, String message) {
         return new FieldErrorException(Map.of(key,message));
     }
-    public record NoticeSummary(String noticeId,String title,String publisherOrgId,
+    private record NoticeScope(long provinceId,Long cityId,String role) { }
+    public record NoticeSummary(String noticeId,String title,String publisherLevel,String publisherOrgId,
             String publisherUnitName,Instant publishedAt,Instant updatedAt,int currentVersion,
             boolean canEdit,boolean canDelete) { }
-    public record NoticeDetail(String noticeId,String title,String publisherOrgId,
+    public record NoticeDetail(String noticeId,String title,String publisherLevel,String publisherOrgId,
             String publisherUnitName,Instant publishedAt,Instant updatedAt,int currentVersion,
             boolean canEdit,boolean canDelete,String content,String publisherUserId) { }
     public record NoticePage(List<NoticeSummary> items,long total,int page,int size) { }

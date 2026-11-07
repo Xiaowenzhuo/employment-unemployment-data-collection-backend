@@ -11,6 +11,7 @@ import com.example.employment.backend.week2.shared.service.ScopeService;
 import com.example.employment.backend.week3.period.model.SurveyPeriod;
 import com.example.employment.backend.week3.period.service.PeriodService;
 import com.example.employment.backend.week3.report.dao.ReportDao.OptionRow;
+import com.example.employment.backend.week3.report.dao.ReportDao.BaselineSource;
 import com.example.employment.backend.week3.report.model.Report;
 import com.example.employment.backend.week3.report.model.ReportForm;
 import com.example.employment.backend.week3.report.model.ReportViews.*;
@@ -86,7 +87,7 @@ public class ReportService {
         SurveyPeriod period = periods.visibleToEnterprise(actor, periodCode, false);
         long orgId = actor.orgId();
         Report report = reports.byOrgPeriod(orgId, periodCode, false).orElse(null);
-        return view(period, report, filingService.canReport(orgId), reports.baseline(orgId).orElse(null));
+        return view(period, report, filingService.canReport(orgId), orgId);
     }
 
     @Transactional
@@ -101,9 +102,15 @@ public class ReportService {
         }
         int current = existing == null ? 0 : existing.currentVersion();
         if (current != expectedVersion) throw new ConflictException("报表版本已变化，请刷新后重试");
-        Integer baseline = reports.baseline(orgId).orElse(null);
-        ReportForm form = normalize(input);
-        validate(form, baseline, false);
+        ReportForm normalized = normalize(input);
+        Rolling source = rolling(orgId, periodCode, existing,
+                normalized.periodEmploymentCount());
+        if (normalized.baselineEmploymentCount() != null
+                && !normalized.baselineEmploymentCount().equals(source.count())) {
+            throw field("baselineEmploymentCount", "须等于后端计算的滚动基线");
+        }
+        ReportForm form = withBaseline(normalized, source.count());
+        validate(form, false);
         LocalDateTime now = now();
         if (existing == null) {
             reports.insert(reports.nextId(), orgId, periodCode, form, now);
@@ -112,7 +119,7 @@ public class ReportService {
         }
         Report saved = reports.byOrgPeriod(orgId, periodCode, false).orElseThrow();
         filings.audit(actor.id(), orgId, "REPORT_DRAFT_SAVED", periodCode, now);
-        return view(period, saved, true, baseline);
+        return view(period, saved, true, orgId);
     }
 
     @Transactional
@@ -129,23 +136,27 @@ public class ReportService {
         if (existing.currentVersion() != expectedVersion) {
             throw new ConflictException("报表版本已变化，请刷新后重试");
         }
-        Integer baseline = reports.baseline(orgId).orElse(null);
-        validate(existing.form(), baseline, true);
+        Rolling source = rolling(orgId, periodCode, existing,
+                existing.form().periodEmploymentCount());
+        ReportForm submittedForm = withBaseline(existing.form(), source.count());
+        validate(submittedForm, true);
         LocalDateTime now = now();
-        if (baseline == null) {
-            reports.insertBaseline(orgId, existing.form().baselineEmploymentCount(), existing.id());
-        }
-        if (reports.submit(existing.id(), expectedVersion, now) != 1) {
+        if (reports.submitWithBaseline(existing.id(), expectedVersion, now,
+                source.count(), source.periodCode(), source.reportId() == null
+                        ? existing.id() : source.reportId(), source.kind()) != 1) {
             throw new ConflictException("报表版本已变化，请刷新后重试");
         }
         int nextSubmission = existing.submissionVersion() + 1;
         var filing = filings.byOrg(orgId, false).orElseThrow(ForbiddenException::new);
         if (!"APPROVED".equals(filing.status())) throw new ForbiddenException();
-        reports.snapshot(existing, nextSubmission, actor.id(), now,
+        Report submitted = reports.byOrgPeriod(orgId, periodCode, false).orElseThrow();
+        reports.snapshot(submitted, nextSubmission, actor.id(), now,
                 filing.id(), filing.currentVersion());
         filings.audit(actor.id(), orgId, "REPORT_SUBMITTED", periodCode, now);
         return new SubmitResult(Long.toString(existing.id()), periodCode, "SUBMITTED_CITY",
-                expectedVersion + 1, nextSubmission, now.toInstant(ZoneOffset.UTC));
+                expectedVersion + 1, nextSubmission, now.toInstant(ZoneOffset.UTC),
+                source.periodCode(), Long.toString(source.reportId() == null
+                        ? existing.id() : source.reportId()), source.count());
     }
 
     public History history(UserAccount actor, String periodCode) {
@@ -169,10 +180,7 @@ public class ReportService {
         });
     }
 
-    private void validate(ReportForm form, Integer lockedBaseline, boolean submitting) {
-        if (lockedBaseline != null && !lockedBaseline.equals(form.baselineEmploymentCount())) {
-            throw field("baselineEmploymentCount", "必须沿用首次提交锁定的建档期人数");
-        }
+    private void validate(ReportForm form, boolean submitting) {
         count(form.baselineEmploymentCount(), "baselineEmploymentCount", submitting);
         count(form.periodEmploymentCount(), "periodEmploymentCount", submitting);
         length(form.otherReason(), "otherReason", submitting);
@@ -239,21 +247,50 @@ public class ReportService {
         return value == null || value.trim().isEmpty() ? null : value.trim();
     }
 
-    private ReportView view(SurveyPeriod period, Report report,
-            boolean eligible, Integer baseline) {
+    private ReportView view(SurveyPeriod period, Report report, boolean eligible, long orgId) {
         String blocked = PeriodService.blockedReason(period, eligible,
                 report == null ? null : report.status(), Instant.now());
+        Rolling source = rolling(orgId, period.code(), report,
+                report == null ? null : report.form().periodEmploymentCount());
+        boolean locked = report != null && report.submissionVersion() > 0;
         return new ReportView(report == null ? null : Long.toString(report.id()), period.code(),
                 report == null ? null : report.status(), report == null ? 0 : report.currentVersion(),
                 report == null ? 0 : report.submissionVersion(), eligible,
-                period.windowStatus(Instant.now()), blocked == null, blocked, baseline != null,
-                baseline, report == null ? null : report.form(),
+                period.windowStatus(Instant.now()), blocked == null, blocked, locked,
+                locked ? source.count() : null,
+                report == null ? null : withBaseline(report.form(), source.count()),
                 report == null ? null : report.updatedAt(),
                 report == null ? null : report.submittedAt(),
                 report == null ? null : latestReturn(Long.toString(report.id()), report.status()),
                 report != null && corrections.voided(report.id()),
-                report == null ? null : corrections.voidedAt(report.id()));
+                report == null ? null : corrections.voidedAt(report.id()),
+                source.periodCode(), source.reportId() == null ? null :
+                        Long.toString(source.reportId()), source.count(), source.kind(), false);
     }
+
+    private Rolling rolling(long orgId, String periodCode, Report report, Integer current) {
+        if (report != null && report.submissionVersion() > 0
+                && report.baselineSourcePeriodCode() != null) {
+            return new Rolling(report.baselineSourcePeriodCode(),
+                    report.baselineSourceReportId(), report.form().baselineEmploymentCount(),
+                    report.baselineSourceKind());
+        }
+        BaselineSource previous = reports.previousSource(orgId, periodCode).orElse(null);
+        return previous == null
+                ? new Rolling(periodCode, report == null ? null : report.id(), current,
+                        "FIRST_SUBMISSION")
+                : new Rolling(previous.periodCode(), previous.reportId(),
+                        previous.employmentCount(), "PREVIOUS_SUBMISSION");
+    }
+
+    private static ReportForm withBaseline(ReportForm form, Integer baseline) {
+        return new ReportForm(baseline, form.periodEmploymentCount(), form.otherReason(),
+                form.reductionTypeCode(), form.primaryReasonCode(), form.primaryReasonDetail(),
+                form.secondaryReasonCode(), form.secondaryReasonDetail(),
+                form.tertiaryReasonCode(), form.tertiaryReasonDetail());
+    }
+
+    private record Rolling(String periodCode, Long reportId, Integer count, String kind) { }
 
     private com.example.employment.backend.week4.review.model.ReviewViews.LatestReturn latestReturn(
             String reportId, String status) {

@@ -2,6 +2,7 @@ package com.example.employment.backend.week3.report.repository;
 
 import com.example.employment.backend.week3.report.dao.ReportDao;
 import com.example.employment.backend.week3.report.dao.ReportDao.OptionRow;
+import com.example.employment.backend.week3.report.dao.ReportDao.BaselineSource;
 import com.example.employment.backend.week3.report.model.Report;
 import com.example.employment.backend.week3.report.model.ReportForm;
 import com.example.employment.backend.week3.report.model.ReportViews.ListItem;
@@ -30,6 +31,14 @@ public class ReportRepository {
         return dao.updateDraft(id, version, form, now);
     }
     public int submit(long id, int version, LocalDateTime now) { return dao.submit(id, version, now); }
+    public Optional<BaselineSource> previousSource(long orgId, String periodCode) {
+        return dao.previousSource(orgId, periodCode);
+    }
+    public int submitWithBaseline(long id, int version, LocalDateTime now,
+            int baseline, String sourcePeriod, long sourceReportId, String sourceKind) {
+        return dao.submitWithBaseline(id, version, now, baseline, sourcePeriod,
+                sourceReportId, sourceKind);
+    }
     public Optional<Integer> baseline(long orgId) { return dao.baseline(orgId); }
     public void insertBaseline(long orgId, int count, long reportId) {
         dao.insertBaseline(orgId, count, reportId);

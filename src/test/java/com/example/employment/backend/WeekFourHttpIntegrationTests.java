@@ -187,12 +187,12 @@ class WeekFourHttpIntegrationTests {
     private String form(int version, int count) throws Exception {
         Map<String, Object> input = new LinkedHashMap<>();
         input.put("expectedVersion", version);
-        input.put("baselineEmploymentCount", 100);
+        input.put("baselineEmploymentCount", 90);
         input.put("periodEmploymentCount", count);
         input.put("otherReason", "无");
-        input.put("reductionTypeCode", "TYPE_OTHER");
-        input.put("primaryReasonCode", "REASON_VOLUNTARY_LEAVE");
-        input.put("primaryReasonDetail", "员工自行离职");
+        input.put("reductionTypeCode", count < 90 ? "TYPE_OTHER" : null);
+        input.put("primaryReasonCode", count < 90 ? "REASON_VOLUNTARY_LEAVE" : null);
+        input.put("primaryReasonDetail", count < 90 ? "员工自行离职" : null);
         input.put("secondaryReasonCode", null);
         input.put("secondaryReasonDetail", null);
         input.put("tertiaryReasonCode", null);

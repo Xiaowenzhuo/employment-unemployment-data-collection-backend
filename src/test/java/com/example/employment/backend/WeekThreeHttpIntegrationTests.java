@@ -171,15 +171,15 @@ class WeekThreeHttpIntegrationTests {
 
         var next = body(call("GET", "/api/v1/enterprise/reports/W3_SECOND", enterprise, null))
                 .path("data");
-        assertThat(next.path("baselineLocked").asBoolean()).isTrue();
-        assertThat(next.path("lockedBaselineEmploymentCount").asInt()).isEqualTo(120);
+        assertThat(next.path("baselineLocked").asBoolean()).isFalse();
+        assertThat(next.path("computedBaselineEmploymentCount").asInt()).isEqualTo(115);
         assertThat(call("PUT", "/api/v1/enterprise/reports/W3_SECOND", enterprise,
                 form(0, 121, 121, false)).statusCode()).isEqualTo(400);
         assertThat(call("PUT", "/api/v1/enterprise/reports/W3_SECOND", enterprise,
-                form(0, 120, 120, false).replace("\"reductionTypeCode\":null",
+                form(0, 115, 115, false).replace("\"reductionTypeCode\":null",
                         "\"reductionTypeCode\":\"TYPE_OTHER\"")).statusCode()).isEqualTo(400);
         assertThat(call("PUT", "/api/v1/enterprise/reports/W3_SECOND", enterprise,
-                form(0, 120, 120, false).replace("\"otherReason\":\"无\"",
+                form(0, 115, 115, false).replace("\"otherReason\":\"无\"",
                         "\"otherReason\":\" \"")).statusCode()).isEqualTo(200);
         var missingOther = call("POST", "/api/v1/enterprise/reports/W3_SECOND/submit", enterprise,
                 "{\"expectedVersion\":1}");
@@ -187,16 +187,17 @@ class WeekThreeHttpIntegrationTests {
         assertThat(body(missingOther).path("data").path("fieldErrors").path("otherReason").asText())
                 .isNotBlank();
         assertThat(call("PUT", "/api/v1/enterprise/reports/W3_SECOND", enterprise,
-                form(1, 120, 120, false)).statusCode()).isEqualTo(200);
+                form(1, 115, 115, false)).statusCode()).isEqualTo(200);
         assertThat(call("POST", "/api/v1/enterprise/reports/W3_SECOND/submit", enterprise,
                 "{\"expectedVersion\":2}").statusCode()).isEqualTo(200);
-        assertThat(jdbc.queryForObject("SELECT employment_count FROM enterprise_baseline WHERE org_id=6300",
-                Integer.class)).isEqualTo(120);
+        assertThat(jdbc.queryForObject("SELECT baseline_employment_count FROM enterprise_report "
+                + "WHERE org_id=6300 AND period_code='W3_SECOND'",
+                Integer.class)).isEqualTo(115);
         assertThat(jdbc.queryForObject("""
                 SELECT COUNT(*) FROM report_snapshot s
                 JOIN enterprise_report r ON r.id=s.report_id WHERE r.org_id=6300
                 """, Integer.class))
-                .isEqualTo(2);
+                .isEqualTo(3);
         assertThat(body(call("GET", "/api/v1/enterprise/reports?status=SUBMITTED_CITY", enterprise,
                 null)).path("data").path("total").asInt()).isEqualTo(2);
         assertThat(call("GET", "/api/v1/enterprise/reports?status=BAD", enterprise, null)
@@ -239,6 +240,25 @@ class WeekThreeHttpIntegrationTests {
                     'DEMO_NATURE_1_1','DEMO_INDUSTRY_1','DEMO_INDUSTRY_1_1',
                     '测试业务','联系人','DEMO_ADDR_1','DEMO_ADDR_1_1','100000',
                     '13800000000','01000000000',CURRENT_TIMESTAMP,6301)
+                """);
+        jdbc.update("""
+                INSERT INTO survey_period (code,label,start_at,end_exclusive_at,demo,
+                    province_org_id,open_at,close_at,current_version)
+                VALUES ('W3_PRE','前一期','2025-01-01 00:00:00','2025-12-31 00:00:00',
+                    false,6100,'2024-01-01 00:00:00','2025-12-31 00:00:00',1)
+                """);
+        jdbc.update("""
+                INSERT INTO enterprise_report (id,org_id,period_code,status,current_version,
+                    submission_version,baseline_employment_count,period_employment_count,
+                    other_reason,updated_at,submitted_at)
+                VALUES (9002,6300,'W3_PRE','APPROVED_PROVINCE',2,1,120,120,'无',
+                    CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+                """);
+        jdbc.update("""
+                INSERT INTO report_snapshot (report_id,submission_version,
+                    baseline_employment_count,period_employment_count,other_reason,
+                    submitted_at,submitted_by,result)
+                VALUES (9002,1,120,120,'无',CURRENT_TIMESTAMP,6301,'SUBMITTED_CITY')
                 """);
     }
 

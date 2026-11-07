@@ -1,0 +1,3145 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统——老师反馈功能修订前后端接口约定",
+    "version": "revision-implemented-2026-11-07",
+    "description": "本文件仅描述本轮老师反馈涉及的接口增量，须与 W1–W6 接口约定合并阅读。本版业务口径作为前后端实现约定；接口已按本版在服务器部署并验证。组织范围由 Bearer 令牌确定，前端不得传入企业或管理机构 ID 来扩大范围。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "x-changeTypeMeaning": {
+    "MODIFIED": "沿用 W1–W6 的现有路径与方法，本轮调整字段或业务语义；未列出的旧字段继续按原契约返回。",
+    "NEW": "本轮新增并已实现的可调用接口。"
+  },
+  "x-ruleStatus": {
+    "R1": "老师确认：首报基线等于本期人数；后续使用上一实际成功上报期的当期有效人数，并冻结来源。 已提交后续期的来源不会因旧期修订或作废而静默变化。",
+    "R2": "老师确认：市、省审核只有通过和退回；不增加通过后退回。现有审核路径保持不变。",
+    "R3": "本轮对接确定：一家企业可选多个不同调查期的可提交报表，后端按期次先后逐项独立提交并允许部分成功；每项返回自己的结果和新版本。"
+  },
+  "x-unchangedExistingPaths": [
+    "POST /city/reports/{reportId}/approve",
+    "POST /city/reports/{reportId}/return",
+    "POST /province/reports/{reportId}/approve",
+    "POST /province/reports/{reportId}/return",
+    "GET /province/accounts",
+    "POST /province/notices",
+    "PUT /province/notices/{noticeId}",
+    "DELETE /province/notices/{noticeId}"
+  ],
+  "x-existingSemanticUpdates": [
+    {
+      "paths": [
+        "GET /province/summaries",
+        "GET /province/data/reports",
+        "GET /province/exports/reports",
+        "GET /province/analysis/cities",
+        "GET /city/reports/{reportId}",
+        "GET /province/reports/{reportId}"
+      ],
+      "changeType": "MODIFIED",
+      "change": "无新增请求字段；涉及基线、增减量和百分比时改用 R1 冻结的滚动基线与当前有效修订值，仍遵守原权限和筛选。报表历史新提交快照增加基线来源字段；旧快照保留原值。"
+    },
+    {
+      "path": "GET /enterprise/reports/{periodCode}/history",
+      "changeType": "MODIFIED",
+      "change": "新提交的 snapshots 条目补 baselineSourcePeriodCode、baselineSourceReportId、baselineEmploymentCount；旧快照不追改。"
+    }
+  ],
+  "paths": {
+    "/enterprise/reports/{periodCode}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/periodCode"
+        }
+      ],
+      "get": {
+        "summary": "读取本企业本期报表及滚动基线",
+        "x-changeType": "MODIFIED",
+        "x-previousContract": "W3/W4 GET /enterprise/reports/{periodCode}",
+        "description": "原 ReportView 字段保留；data 新增 baselineSourcePeriodCode、baselineSourceReportId、computedBaselineEmploymentCount、baselineSourceKind、baselineEditable。首次无先前上报时，来源期为本期，人数跟随草稿本期人数。再次提交同一期退回报表仍使用原来源，不指向自身。",
+        "responses": {
+          "200": {
+            "description": "报表详情；无报表时原 form/status 为 null，新增来源字段也可为 null。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportViewEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "P2",
+                    "status": "DRAFT",
+                    "currentVersion": 2,
+                    "submissionVersion": 0,
+                    "filingEligible": true,
+                    "windowStatus": "OPEN",
+                    "canWrite": true,
+                    "blockedReason": null,
+                    "baselineLocked": false,
+                    "lockedBaselineEmploymentCount": null,
+                    "form": {
+                      "baselineEmploymentCount": 100,
+                      "periodEmploymentCount": 90,
+                      "otherReason": null,
+                      "reductionTypeCode": "TYPE_OTHER",
+                      "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                      "primaryReasonDetail": "离职",
+                      "secondaryReasonCode": null,
+                      "secondaryReasonDetail": null,
+                      "tertiaryReasonCode": null,
+                      "tertiaryReasonDetail": null
+                    },
+                    "updatedAt": "2026-11-07T08:00:00Z",
+                    "submittedAt": null,
+                    "baselineSourcePeriodCode": "P1",
+                    "baselineSourceReportId": "20",
+                    "computedBaselineEmploymentCount": 100,
+                    "baselineSourceKind": "PREVIOUS_SUBMISSION",
+                    "baselineEditable": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "x-frontendRule": "展示来源期和计算人数；baselineEmploymentCount 只读，首报草稿修改 periodEmploymentCount 时两个数同步显示；依据 canWrite 和 blockedReason 控制操作。"
+      },
+      "put": {
+        "summary": "保存本期草稿，服务端计算滚动基线",
+        "x-changeType": "MODIFIED",
+        "x-previousContract": "W3/W4 PUT /enterprise/reports/{periodCode}",
+        "description": "保留 W3 完整表单 PUT 与 expectedVersion。前端不负责选择基线。兼容旧 baselineEmploymentCount 字段：可传 null 或服务端计算值；传入不一致的值报 400，不覆盖计算值。下降原因仅在本期人数小于计算基线时必填。首次草稿人数变化时基线同步变化。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveReportRequest"
+              },
+              "example": {
+                "expectedVersion": 2,
+                "baselineEmploymentCount": 100,
+                "periodEmploymentCount": 90,
+                "otherReason": null,
+                "reductionTypeCode": "TYPE_OTHER",
+                "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                "primaryReasonDetail": "离职",
+                "secondaryReasonCode": null,
+                "secondaryReasonDetail": null,
+                "tertiaryReasonCode": null,
+                "tertiaryReasonDetail": null
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "沿用 GET 的 ReportView 返回结构及新增基线字段。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportViewEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/enterprise/reports/{periodCode}/submit": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/periodCode"
+        }
+      ],
+      "post": {
+        "summary": "单份提交并冻结滚动基线来源",
+        "x-changeType": "MODIFIED",
+        "x-previousContract": "W3/W4 POST /enterprise/reports/{periodCode}/submit",
+        "description": "请求仍只传 expectedVersion。提交时重新检查备案资格、窗口、表单、版本及上一实际成功上报期；成功后在报表和新提交快照中冻结来源期、来源报表 ID、基线人数。对旧期之后的修订或作废，不静默改写已提交的后续期基线。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionRequest"
+              },
+              "example": {
+                "expectedVersion": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "提交成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "reportId": "21",
+                    "periodCode": "P2",
+                    "status": "SUBMITTED_CITY",
+                    "currentVersion": 3,
+                    "submissionVersion": 1,
+                    "submittedAt": "2026-11-07T08:10:00Z",
+                    "baselineSourcePeriodCode": "P1",
+                    "baselineSourceReportId": "20",
+                    "baselineEmploymentCount": 100
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/enterprise/reports/batch-submit": {
+      "post": {
+        "summary": "本企业不同期草稿逐项批量提交",
+        "x-changeType": "NEW",
+        "x-ruleStatus": "R3_FIXED_FOR_THIS_CONTRACT",
+        "description": "保留原单份提交接口。本接口只接收登录企业自己的多个不同期、可按原单份接口提交的报表；请求仅含期次代码和 expectedVersion。重复期码或多余企业/组织 ID 使整个请求返回 400，且不提交任何项。服务端按期开始时间、期码排序；每项单独校验备案资格、窗口、表单及版本，并独立提交。前一项成功可成为后一项的滚动基线来源；前一项失败时，后一项查找此前最近一次实际成功提交的期次。各项互不回滚；全部成功、部分成功、全部逐项失败均返回 HTTP 200，以 successCount、failureCount 和 items 明示结果。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchSubmitRequest"
+              },
+              "example": {
+                "items": [
+                  {
+                    "periodCode": "P1",
+                    "expectedVersion": 2
+                  },
+                  {
+                    "periodCode": "P2",
+                    "expectedVersion": 1
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "包括全部成功、部分成功、全部逐项失败；以前端逐项结果为准。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchSubmitEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "successCount": 1,
+                    "failureCount": 1,
+                    "items": [
+                      {
+                        "periodCode": "P1",
+                        "reportId": "20",
+                        "success": true,
+                        "reasonCode": null,
+                        "reason": null,
+                        "currentVersion": 3,
+                        "submissionVersion": 1,
+                        "baselineSourcePeriodCode": "P1",
+                        "baselineEmploymentCount": 100
+                      },
+                      {
+                        "periodCode": "P2",
+                        "reportId": "21",
+                        "success": false,
+                        "reasonCode": "VERSION_CONFLICT",
+                        "reason": "草稿版本已变化，请刷新后重试",
+                        "currentVersion": 2,
+                        "submissionVersion": 0,
+                        "baselineSourcePeriodCode": null,
+                        "baselineEmploymentCount": null
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "x-processingRules": {
+          "scope": "只处理令牌对应的同一家企业；请求体不得指定企业或管理机构 ID。",
+          "sort": "先按调查期 startAt 升序，再按 periodCode 升序；响应 items 同一顺序。",
+          "envelopeFailure": "items 为空、期码重复或出现未约定字段时 HTTP 400，提交数为零。",
+          "itemFailure": "逐项校验失败只影响该项；成功项立即保留，后续项继续处理。",
+          "baseline": "每项提交时按 R1 从已经实际成功提交的先前期次计算；若 P1 成功、P2 失败、P3 成功，则 P3 的来源是 P1。",
+          "retry": "前端只重试失败项，使用刷新后获取的 expectedVersion；已成功项不重复提交。"
+        }
+      }
+    },
+    "/notices": {
+      "get": {
+        "summary": "读取当前角色可见的省级与市级通知",
+        "x-changeType": "MODIFIED",
+        "x-previousContract": "W6 GET /notices",
+        "description": "保留 page、size 和原分页外壳。省级只见本省省级通知；市级见本省省级通知及自己发布的市级通知；企业见本省省级通知及所属城市发布的市级通知。列表新增 publisherLevel、publisherOrgId、publisherUnitName、canEdit、canDelete。市级编辑删除仅限自己发布。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "可见通知分页",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticePageEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "items": [
+                      {
+                        "noticeId": "42",
+                        "title": "本期填报提醒",
+                        "publisherLevel": "CITY",
+                        "publisherOrgId": "201",
+                        "publisherUnitName": "昆明市管理单位",
+                        "publishedAt": "2026-11-07T08:00:00Z",
+                        "updatedAt": null,
+                        "currentVersion": 1,
+                        "canEdit": false,
+                        "canDelete": false
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/notices/{noticeId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/noticeId"
+        }
+      ],
+      "get": {
+        "summary": "读取可见通知详情与操作权限",
+        "x-changeType": "MODIFIED",
+        "x-previousContract": "W6 GET /notices/{noticeId}",
+        "description": "保留 W6 字段，新增 publisherLevel；越权或已删除通知按原错误约定处理。",
+        "responses": {
+          "200": {
+            "description": "通知详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeDetailEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "noticeId": "42",
+                    "title": "本期填报提醒",
+                    "content": "请在截止时间前完成填报。",
+                    "publisherLevel": "CITY",
+                    "publisherOrgId": "201",
+                    "publisherUnitName": "昆明市管理单位",
+                    "publisherUserId": "501",
+                    "publishedAt": "2026-11-07T08:00:00Z",
+                    "updatedAt": null,
+                    "currentVersion": 1,
+                    "canEdit": false,
+                    "canDelete": false
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/city/notices": {
+      "post": {
+        "summary": "市级发布本市企业可见的通知",
+        "x-changeType": "NEW",
+        "description": "仅 CITY 角色。标题最多 50 字，正文最多 2000 字；发布范围由登录人所属城市确定，不接收前端指定的发布组织或目标企业。沿用 W6 通知版本、软删除和事件日志规则。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeCreate"
+              },
+              "example": {
+                "title": "本期填报提醒",
+                "content": "请在截止时间前完成填报。"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "发布成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeDetailEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/city/notices/{noticeId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/noticeId"
+        }
+      ],
+      "put": {
+        "summary": "市级修改自己发布的通知",
+        "x-changeType": "NEW",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoticeUpdate"
+              },
+              "example": {
+                "expectedVersion": 1,
+                "title": "本期填报提醒（更新）",
+                "content": "请尽快完成填报。"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "修改成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeDetailEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "delete": {
+        "summary": "市级软删除自己发布的通知",
+        "x-changeType": "NEW",
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteNoticeEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "noticeId": "42",
+                    "deleted": true,
+                    "currentVersion": 3
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        },
+        "parameters": [
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "与 W6 省级通知删除一致，传当前版本；不发送请求体。"
+          }
+        ]
+      }
+    },
+    "/enterprise/work-overview": {
+      "get": {
+        "summary": "企业工作首页数据",
+        "x-changeType": "NEW",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/optionalPeriodCode"
+          }
+        ],
+        "description": "不传 periodCode 时返回当前开放或最近一期；无任何调查期时 selectedPeriod 为 null。备案、当期报表、退回原因、下一步操作均由服务端判断。",
+        "responses": {
+          "200": {
+            "description": "企业工作概览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseOverviewEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "selectedPeriod": {
+                      "periodCode": "P2",
+                      "periodLabel": "第二期",
+                      "deadlineAt": "2026-11-30T15:59:59Z",
+                      "windowStatus": "OPEN"
+                    },
+                    "filingStatus": "APPROVED",
+                    "reportStatus": "RETURNED_CITY",
+                    "latestReturnReason": "请核对本期人数",
+                    "currentStep": "FIX_RETURNED_REPORT",
+                    "nextAction": {
+                      "label": "修改并重新提交",
+                      "route": "/enterprise/reports/P2",
+                      "enabled": true
+                    },
+                    "visibleNoticeCount": 2
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "x-emptyStateRule": "没有任何调查期时 selectedPeriod=null；期次相关数量为 0，nextAction 不得指向不存在的报表；接口失败仍按错误状态码和 ApiError 返回，前端须区别于空数据。",
+        "x-emptyStateExample": {
+          "selectedPeriod": null,
+          "filingStatus": "NO_FILING",
+          "reportStatus": null,
+          "latestReturnReason": null,
+          "currentStep": "WAIT_FOR_PERIOD_OR_FILING",
+          "nextAction": {
+            "label": "完善备案",
+            "route": "/enterprise/filing",
+            "enabled": true
+          },
+          "visibleNoticeCount": 0
+        }
+      }
+    },
+    "/city/work-overview": {
+      "get": {
+        "summary": "市级工作首页数据",
+        "x-changeType": "NEW",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/optionalPeriodCode"
+          }
+        ],
+        "description": "统计范围限定登录市和所选期；无调查期时 selectedPeriod 为 null，期相关数量为 0。",
+        "responses": {
+          "200": {
+            "description": "市级工作概览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CityOverviewEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "selectedPeriod": {
+                      "periodCode": "P2",
+                      "periodLabel": "第二期",
+                      "deadlineAt": "2026-11-30T15:59:59Z",
+                      "windowStatus": "OPEN"
+                    },
+                    "reportCounts": {
+                      "pendingCity": 3,
+                      "approvedCity": 4,
+                      "returnedCity": 1,
+                      "forwardedProvince": 4,
+                      "notSubmitted": 2
+                    },
+                    "noticeEntry": {
+                      "label": "通知管理",
+                      "route": "/city/notices"
+                    },
+                    "nextAction": {
+                      "label": "审核待办",
+                      "route": "/city/reports?periodCode=P2",
+                      "enabled": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "x-emptyStateRule": "没有任何调查期时 selectedPeriod=null；期次相关数量为 0，nextAction 不得指向不存在的报表；接口失败仍按错误状态码和 ApiError 返回，前端须区别于空数据。"
+      }
+    },
+    "/province/work-overview": {
+      "get": {
+        "summary": "省级工作首页数据",
+        "x-changeType": "NEW",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/optionalPeriodCode"
+          }
+        ],
+        "description": "备案待审和报表待审由服务端分开统计；城市进度按本省所选期及辖属组织计算。无调查期时 selectedPeriod 为 null。",
+        "responses": {
+          "200": {
+            "description": "省级工作概览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvinceOverviewEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "selectedPeriod": {
+                      "periodCode": "P2",
+                      "periodLabel": "第二期",
+                      "deadlineAt": "2026-11-30T15:59:59Z",
+                      "windowStatus": "OPEN"
+                    },
+                    "pendingFilingCount": 2,
+                    "pendingReportCount": 3,
+                    "approvedReportCount": 8,
+                    "cityProgress": {
+                      "submittedCityCount": 3,
+                      "notSubmittedCityCount": 1,
+                      "items": [
+                        {
+                          "cityCode": "530100",
+                          "cityName": "昆明市",
+                          "eligibleEnterpriseCount": 5,
+                          "submittedEnterpriseCount": 4,
+                          "notSubmittedEnterpriseCount": 1
+                        }
+                      ]
+                    },
+                    "entries": [
+                      {
+                        "label": "备案审核",
+                        "route": "/province/filings"
+                      },
+                      {
+                        "label": "报表审核",
+                        "route": "/province/reports?periodCode=P2"
+                      },
+                      {
+                        "label": "企业进度",
+                        "route": "/province/enterprise-progress?periodCode=P2"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "x-emptyStateRule": "没有任何调查期时 selectedPeriod=null；期次相关数量为 0，nextAction 不得指向不存在的报表；接口失败仍按错误状态码和 ApiError 返回，前端须区别于空数据。"
+      }
+    },
+    "/province/enterprise-progress": {
+      "get": {
+        "summary": "省级按企业查看备案与所选期上报双状态",
+        "x-changeType": "NEW",
+        "description": "从本省企业组织全集出发关联备案和所选期报表；未备案、无报表、已作废均须保留在查询范围。列表和汇总由同一查询口径得到；summary 为本省本期全部企业，items 才应用状态筛选。与原 /province/accounts 的 dataStatus/periodCode 语义独立。 reportStatus 查询参数是页面汇总筛选，返回行的 reportStatus 是原始业务状态。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/requiredPeriodCode"
+          },
+          {
+            "name": "cityCode",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "filingStatus",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/FilingProgressStatus"
+            }
+          },
+          {
+            "name": "reportStatus",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ReportProgressFilter"
+            },
+            "description": "前端展示用的汇总筛选：PENDING_CITY=SUBMITTED_CITY，PENDING_PROVINCE=SUBMITTED_PROVINCE，APPROVED=APPROVED_PROVINCE，RETURNED 汇总市/省两种退回。返回行的 reportStatus 仍为具体状态。"
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "双状态分页及总览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "periodCode": "P2",
+                    "summary": {
+                      "totalEnterprises": 3,
+                      "filingCounts": {
+                        "NO_FILING": 1,
+                        "APPROVED": 2
+                      },
+                      "reportCounts": {
+                        "NOT_SUBMITTED": 2,
+                        "APPROVED_PROVINCE": 1
+                      }
+                    },
+                    "items": [
+                      {
+                        "enterpriseOrgId": "301",
+                        "enterpriseName": "示例企业一",
+                        "cityCode": "530100",
+                        "cityName": "昆明市",
+                        "filingStatus": "APPROVED",
+                        "reportStatus": "NOT_SUBMITTED",
+                        "reportId": null,
+                        "reportVoided": false,
+                        "lastSubmittedAt": null
+                      }
+                    ],
+                    "total": 3,
+                    "page": 0,
+                    "size": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/province/analysis/compare": {
+      "get": {
+        "summary": "比较两个调查期，可按单个企业过滤",
+        "x-changeType": "MODIFIED",
+        "x-previousContract": "W6 GET /province/analysis/compare",
+        "description": "保留原参数和响应外壳、新增 enterpriseOrgId 可选筛选；filters 回显该字段。指标基线改为冻结滚动基线，当前人数用本期有效修订值。单企业无样本的期按原无样本规则表达。",
+        "parameters": [
+          {
+            "name": "firstPeriodCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "secondPeriodCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/regionCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryCode"
+          },
+          {
+            "$ref": "#/components/parameters/enterpriseOrgId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "沿用 W6 CompareAnalysis；filters 新增 enterpriseOrgId，metrics.baselineEmploymentTotal 使用滚动基线。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompareEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "firstPeriodCode": "P1",
+                    "secondPeriodCode": "P2",
+                    "filters": {
+                      "regionCode": null,
+                      "natureParentCode": null,
+                      "natureCode": null,
+                      "industryParentCode": null,
+                      "industryCode": null,
+                      "enterpriseOrgId": "301"
+                    },
+                    "sampleRule": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES",
+                    "periods": [
+                      {
+                        "position": "FIRST",
+                        "periodCode": "P1",
+                        "metrics": {
+                          "enterpriseCount": 1,
+                          "baselineEmploymentTotal": 100,
+                          "periodEmploymentTotal": 100,
+                          "netChange": 0,
+                          "reductionTotal": 0,
+                          "changePercent": 0
+                        }
+                      },
+                      {
+                        "position": "SECOND",
+                        "periodCode": "P2",
+                        "metrics": {
+                          "enterpriseCount": 1,
+                          "baselineEmploymentTotal": 100,
+                          "periodEmploymentTotal": 90,
+                          "netChange": -10,
+                          "reductionTotal": 10,
+                          "changePercent": -10
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/province/analysis/trend": {
+      "get": {
+        "summary": "查看 2–24 个相邻真实调查期趋势，可按单个企业过滤",
+        "x-changeType": "MODIFIED",
+        "x-previousContract": "W6 GET /province/analysis/trend",
+        "description": "保留 W6 periodCodes 传法、其他筛选和响应外壳，新增 enterpriseOrgId。无样本点继续返回 hasSample=false 和 null 指标，前端不可画成 0%。基线采用 R1 滚动基线。",
+        "parameters": [
+          {
+            "name": "periodCodes",
+            "in": "query",
+            "required": true,
+            "description": "按 W6 约定传入 2–24 个相邻真实调查期码",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 2,
+              "maxItems": 24
+            },
+            "style": "form",
+            "explode": false
+          },
+          {
+            "$ref": "#/components/parameters/regionCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryCode"
+          },
+          {
+            "$ref": "#/components/parameters/enterpriseOrgId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "沿用 W6 TrendAnalysis；filters 新增 enterpriseOrgId。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrendEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "periodCodes": [
+                      "P1",
+                      "P2"
+                    ],
+                    "filters": {
+                      "regionCode": null,
+                      "natureParentCode": null,
+                      "natureCode": null,
+                      "industryParentCode": null,
+                      "industryCode": null,
+                      "enterpriseOrgId": "301"
+                    },
+                    "sampleRule": "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES",
+                    "points": [
+                      {
+                        "periodCode": "P1",
+                        "hasSample": true,
+                        "metrics": {
+                          "enterpriseCount": 1,
+                          "baselineEmploymentTotal": 100,
+                          "periodEmploymentTotal": 100,
+                          "netChange": 0,
+                          "reductionTotal": 0,
+                          "changePercent": 0
+                        }
+                      },
+                      {
+                        "periodCode": "P2",
+                        "hasSample": false,
+                        "metrics": null
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/province/analysis/breakdown": {
+      "get": {
+        "summary": "按城市、企业性质、行业或人员变动方向分组",
+        "x-changeType": "NEW",
+        "description": "一次只查一个调查期和一个 groupBy；比较两期时前端分别请求两次后按 groupCode 对齐。样本仅本省该期省级通过且未作废的企业，每企业一期一条，当前人数取有效修订值，基线取冻结值。changePercent=netChange/baselineEmploymentTotal×100，四舍五入保留两位；分母 0 返回 null。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/requiredPeriodCode"
+          },
+          {
+            "name": "groupBy",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CITY",
+                "NATURE",
+                "INDUSTRY",
+                "CHANGE_DIRECTION"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/regionCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryCode"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "分组数据；图表和表格共用 items。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BreakdownEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "periodCode": "P2",
+                    "groupBy": "CHANGE_DIRECTION",
+                    "filters": {
+                      "regionCode": null,
+                      "natureParentCode": null,
+                      "natureCode": null,
+                      "industryParentCode": null,
+                      "industryCode": null
+                    },
+                    "items": [
+                      {
+                        "groupCode": "DECREASE",
+                        "groupName": "减少",
+                        "enterpriseCount": 2,
+                        "baselineEmploymentTotal": 200,
+                        "periodEmploymentTotal": 170,
+                        "netChange": -30,
+                        "reductionTotal": 30,
+                        "increaseTotal": 0,
+                        "changePercent": -15,
+                        "decreaseEnterpriseCount": 2,
+                        "unchangedEnterpriseCount": 0,
+                        "increaseEnterpriseCount": 0
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/province/analysis/enterprises": {
+      "get": {
+        "summary": "省级查询可追溯的企业人数变化明细",
+        "x-changeType": "NEW",
+        "description": "与 breakdown 使用同一省级通过且未作废样本；无样本企业不出现在此分析明细，未备案或未上报企业请用 enterprise-progress。按企业与期唯一、分页；企业性质/行业来自提交时绑定的备案版本，按 W6 回退规则处理。",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/requiredPeriodCode"
+          },
+          {
+            "$ref": "#/components/parameters/regionCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/natureCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryParentCode"
+          },
+          {
+            "$ref": "#/components/parameters/industryCode"
+          },
+          {
+            "$ref": "#/components/parameters/enterpriseOrgId"
+          },
+          {
+            "name": "changeDirection",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "INCREASE",
+                "UNCHANGED",
+                "DECREASE"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/page"
+          },
+          {
+            "$ref": "#/components/parameters/size"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "企业变化明细",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseAnalysisEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "periodCode": "P2",
+                    "items": [
+                      {
+                        "enterpriseOrgId": "301",
+                        "enterpriseName": "示例企业一",
+                        "cityCode": "530100",
+                        "cityName": "昆明市",
+                        "natureCode": "N1",
+                        "natureName": "民营",
+                        "industryCode": "I1",
+                        "industryName": "制造业",
+                        "reportId": "21",
+                        "submissionVersion": 1,
+                        "correctionVersion": 0,
+                        "baselineSourcePeriodCode": "P1",
+                        "baselineEmploymentCount": 100,
+                        "periodEmploymentCount": 90,
+                        "netChange": -10,
+                        "changePercent": -10,
+                        "changeDirection": "DECREASE",
+                        "primaryReasonCode": "REASON_VOLUNTARY_LEAVE",
+                        "primaryReasonDetail": "离职"
+                      }
+                    ],
+                    "total": 1,
+                    "page": 0,
+                    "size": 20
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "periodCode": {
+        "name": "periodCode",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "requiredPeriodCode": {
+        "name": "periodCode",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "optionalPeriodCode": {
+        "name": "periodCode",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "noticeId": {
+        "name": "noticeId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string"
+        }
+      },
+      "page": {
+        "name": "page",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        }
+      },
+      "size": {
+        "name": "size",
+        "in": "query",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 20
+        }
+      },
+      "enterpriseOrgId": {
+        "name": "enterpriseOrgId",
+        "in": "query",
+        "description": "仅省级分析查询过滤本省企业；不是登录身份或授权范围。",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "regionCode": {
+        "name": "regionCode",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "description": "沿用 W6 同名筛选参数；企业性质和行业仍按提交时备案快照匹配。"
+      },
+      "natureParentCode": {
+        "name": "natureParentCode",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "description": "沿用 W6 同名筛选参数；企业性质和行业仍按提交时备案快照匹配。"
+      },
+      "natureCode": {
+        "name": "natureCode",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "description": "沿用 W6 同名筛选参数；企业性质和行业仍按提交时备案快照匹配。"
+      },
+      "industryParentCode": {
+        "name": "industryParentCode",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "description": "沿用 W6 同名筛选参数；企业性质和行业仍按提交时备案快照匹配。"
+      },
+      "industryCode": {
+        "name": "industryCode",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "description": "沿用 W6 同名筛选参数；企业性质和行业仍按提交时备案快照匹配。"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "请求格式、规则或旧版基线字段不符",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "角色或组织范围无权操作",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "不存在或对当前账号不可见",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "版本冲突或状态已变化",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "缺少令牌或令牌无效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ApiError"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "ApiError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      },
+      "VersionRequest": {
+        "type": "object",
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "SaveReportRequest": {
+        "type": "object",
+        "required": [
+          "expectedVersion",
+          "periodEmploymentCount",
+          "otherReason",
+          "primaryReasonDetail",
+          "secondaryReasonDetail",
+          "tertiaryReasonDetail",
+          "reductionTypeCode",
+          "primaryReasonCode",
+          "secondaryReasonCode",
+          "tertiaryReasonCode"
+        ],
+        "description": "实际完整字段仍按 W3 SaveReportRequest；以下只列本轮相关字段，减少原因字段保留原名和规则。",
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "兼容旧客户端，可不传/null；若传整数须等于服务端计算值。"
+          },
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "otherReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reductionTypeCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secondaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "secondaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tertiaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tertiaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "ReportView": {
+        "type": "object",
+        "description": "W3/W4 原 ReportView 全字段继续返回，此处列出本轮新增及前端关键字段。",
+        "properties": {
+          "reportId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "filingEligible": {
+            "type": "boolean"
+          },
+          "windowStatus": {
+            "type": "string"
+          },
+          "canWrite": {
+            "type": "boolean"
+          },
+          "blockedReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baselineLocked": {
+            "type": "boolean"
+          },
+          "lockedBaselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "form": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "submittedAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baselineSourcePeriodCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baselineSourceReportId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "computedBaselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "baselineSourceKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "FIRST_SUBMISSION",
+              "PREVIOUS_SUBMISSION",
+              "LEGACY_MIGRATED",
+              null
+            ]
+          },
+          "baselineEditable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SubmitResult": {
+        "type": "object",
+        "required": [
+          "reportId",
+          "periodCode",
+          "status",
+          "currentVersion",
+          "submissionVersion",
+          "submittedAt",
+          "baselineSourcePeriodCode",
+          "baselineEmploymentCount"
+        ],
+        "properties": {
+          "reportId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "baselineSourcePeriodCode": {
+            "type": "string"
+          },
+          "baselineSourceReportId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baselineEmploymentCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "BatchSubmitRequest": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "periodCode",
+                "expectedVersion"
+              ],
+              "properties": {
+                "periodCode": {
+                  "type": "string"
+                },
+                "expectedVersion": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "至少一项，每个 periodCode 只能出现一次；额外企业/组织 ID 一律拒绝。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchItemResult": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "reportId",
+          "success",
+          "reasonCode",
+          "reason",
+          "currentVersion",
+          "submissionVersion",
+          "baselineSourcePeriodCode",
+          "baselineEmploymentCount"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "reportId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "reasonCode": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "成功时为 null；逐项失败时取固定代码之一。具体原因给前端显示 reason。",
+            "enum": [
+              null,
+              "VERSION_CONFLICT",
+              "FILING_NOT_APPROVED",
+              "WINDOW_NOT_OPEN",
+              "WINDOW_CLOSED",
+              "FORM_INVALID",
+              "REPORT_NOT_DRAFT",
+              "PERIOD_NOT_FOUND"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentVersion": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "submissionVersion": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "baselineSourcePeriodCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "baselineEmploymentCount": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "BatchSubmitResult": {
+        "type": "object",
+        "required": [
+          "successCount",
+          "failureCount",
+          "items"
+        ],
+        "properties": {
+          "successCount": {
+            "type": "integer"
+          },
+          "failureCount": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchItemResult"
+            },
+            "description": "按服务端处理顺序返回，与请求中用户勾选的顺序无关。"
+          }
+        }
+      },
+      "NoticeCreate": {
+        "type": "object",
+        "required": [
+          "title",
+          "content"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "NoticeUpdate": {
+        "type": "object",
+        "required": [
+          "expectedVersion",
+          "title",
+          "content"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "content": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "NoticeSummary": {
+        "type": "object",
+        "required": [
+          "noticeId",
+          "title",
+          "publisherLevel",
+          "publisherOrgId",
+          "publisherUnitName",
+          "publishedAt",
+          "currentVersion",
+          "canEdit",
+          "canDelete"
+        ],
+        "properties": {
+          "noticeId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "publisherLevel": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY"
+            ]
+          },
+          "publisherOrgId": {
+            "type": "string"
+          },
+          "publisherUnitName": {
+            "type": "string"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "currentVersion": {
+            "type": "integer"
+          },
+          "canEdit": {
+            "type": "boolean"
+          },
+          "canDelete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "NoticeDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/NoticeSummary"
+          },
+          {
+            "type": "object",
+            "required": [
+              "content",
+              "publisherUserId"
+            ],
+            "properties": {
+              "content": {
+                "type": "string"
+              },
+              "publisherUserId": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "NoticePage": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoticeSummary"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "DeleteNoticeResult": {
+        "type": "object",
+        "required": [
+          "noticeId",
+          "deleted",
+          "currentVersion"
+        ],
+        "properties": {
+          "noticeId": {
+            "type": "string"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "currentVersion": {
+            "type": "integer"
+          }
+        }
+      },
+      "SelectedPeriod": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "deadlineAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "windowStatus": {
+            "type": "string"
+          }
+        }
+      },
+      "NextAction": {
+        "type": "object",
+        "required": [
+          "label",
+          "route",
+          "enabled"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string",
+            "description": "建议前端导航目标，前端按实际路由映射。"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "EnterpriseOverview": {
+        "type": "object",
+        "required": [
+          "selectedPeriod",
+          "filingStatus",
+          "reportStatus",
+          "latestReturnReason",
+          "currentStep",
+          "nextAction",
+          "visibleNoticeCount"
+        ],
+        "properties": {
+          "selectedPeriod": {
+            "$ref": "#/components/schemas/SelectedPeriod"
+          },
+          "filingStatus": {
+            "type": "string"
+          },
+          "reportStatus": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latestReturnReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "currentStep": {
+            "type": "string"
+          },
+          "nextAction": {
+            "$ref": "#/components/schemas/NextAction"
+          },
+          "visibleNoticeCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "CityOverview": {
+        "type": "object",
+        "required": [
+          "selectedPeriod",
+          "reportCounts",
+          "noticeEntry",
+          "nextAction"
+        ],
+        "properties": {
+          "selectedPeriod": {
+            "$ref": "#/components/schemas/SelectedPeriod"
+          },
+          "reportCounts": {
+            "type": "object",
+            "required": [
+              "pendingCity",
+              "approvedCity",
+              "returnedCity",
+              "forwardedProvince",
+              "notSubmitted"
+            ],
+            "properties": {
+              "pendingCity": {
+                "type": "integer"
+              },
+              "approvedCity": {
+                "type": "integer"
+              },
+              "returnedCity": {
+                "type": "integer"
+              },
+              "forwardedProvince": {
+                "type": "integer"
+              },
+              "notSubmitted": {
+                "type": "integer"
+              }
+            },
+            "description": "pendingCity、approvedCity、returnedCity、forwardedProvince 为办理进度，approvedCity 与 forwardedProvince 可能重叠；不能相加成总量。"
+          },
+          "noticeEntry": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "route": {
+                "type": "string"
+              }
+            }
+          },
+          "nextAction": {
+            "$ref": "#/components/schemas/NextAction"
+          }
+        }
+      },
+      "ProvinceOverview": {
+        "type": "object",
+        "required": [
+          "selectedPeriod",
+          "pendingFilingCount",
+          "pendingReportCount",
+          "approvedReportCount",
+          "cityProgress",
+          "entries"
+        ],
+        "properties": {
+          "selectedPeriod": {
+            "$ref": "#/components/schemas/SelectedPeriod"
+          },
+          "pendingFilingCount": {
+            "type": "integer"
+          },
+          "pendingReportCount": {
+            "type": "integer"
+          },
+          "approvedReportCount": {
+            "type": "integer"
+          },
+          "cityProgress": {
+            "type": "object",
+            "required": [
+              "submittedCityCount",
+              "notSubmittedCityCount",
+              "items"
+            ],
+            "properties": {
+              "submittedCityCount": {
+                "type": "integer"
+              },
+              "notSubmittedCityCount": {
+                "type": "integer"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "cityCode",
+                    "cityName",
+                    "eligibleEnterpriseCount",
+                    "submittedEnterpriseCount",
+                    "notSubmittedEnterpriseCount"
+                  ],
+                  "properties": {
+                    "cityCode": {
+                      "type": "string"
+                    },
+                    "cityName": {
+                      "type": "string"
+                    },
+                    "eligibleEnterpriseCount": {
+                      "type": "integer"
+                    },
+                    "submittedEnterpriseCount": {
+                      "type": "integer"
+                    },
+                    "notSubmittedEnterpriseCount": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            },
+            "description": "submittedCityCount 表示本期有企业完成市级转报的城市数；城市明细 items 展示每市企业进度，前端可显示比例。"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "route": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "FilingProgressStatus": {
+        "type": "string",
+        "enum": [
+          "NO_FILING",
+          "DRAFT",
+          "PENDING",
+          "RETURNED",
+          "APPROVED"
+        ]
+      },
+      "ReportProgressStatus": {
+        "type": "string",
+        "enum": [
+          "NOT_SUBMITTED",
+          "DRAFT",
+          "SUBMITTED_CITY",
+          "RETURNED_CITY",
+          "SUBMITTED_PROVINCE",
+          "RETURNED_PROVINCE",
+          "APPROVED_PROVINCE",
+          "VOIDED"
+        ]
+      },
+      "ProgressRow": {
+        "type": "object",
+        "required": [
+          "enterpriseOrgId",
+          "enterpriseName",
+          "cityCode",
+          "cityName",
+          "filingStatus",
+          "reportStatus",
+          "reportId",
+          "reportVoided",
+          "lastSubmittedAt"
+        ],
+        "properties": {
+          "enterpriseOrgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "cityCode": {
+            "type": "string"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "filingStatus": {
+            "$ref": "#/components/schemas/FilingProgressStatus"
+          },
+          "reportStatus": {
+            "$ref": "#/components/schemas/ReportProgressStatus"
+          },
+          "reportId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reportVoided": {
+            "type": "boolean"
+          },
+          "lastSubmittedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "ProgressResult": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "summary",
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "totalEnterprises": {
+                "type": "integer"
+              },
+              "filingCounts": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              },
+              "reportCounts": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgressRow"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "AnalysisFilters": {
+        "type": "object",
+        "properties": {
+          "regionCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "natureParentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "natureCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "industryParentCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "industryCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enterpriseOrgId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "AnalysisMetrics": {
+        "type": "object",
+        "required": [
+          "enterpriseCount",
+          "baselineEmploymentTotal",
+          "periodEmploymentTotal",
+          "netChange",
+          "reductionTotal",
+          "changePercent"
+        ],
+        "properties": {
+          "enterpriseCount": {
+            "type": "integer"
+          },
+          "baselineEmploymentTotal": {
+            "type": "integer"
+          },
+          "periodEmploymentTotal": {
+            "type": "integer"
+          },
+          "netChange": {
+            "type": "integer"
+          },
+          "reductionTotal": {
+            "type": "integer"
+          },
+          "changePercent": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "description": "沿用 W6 六指标及 filingSourceCounts；此处只列核心字段。"
+      },
+      "CompareResult": {
+        "type": "object",
+        "description": "沿用 W6 CompareAnalysis 其余字段。",
+        "properties": {
+          "firstPeriodCode": {
+            "type": "string"
+          },
+          "secondPeriodCode": {
+            "type": "string"
+          },
+          "filters": {
+            "$ref": "#/components/schemas/AnalysisFilters"
+          },
+          "sampleRule": {
+            "type": "string"
+          },
+          "periods": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": {
+                  "type": "string"
+                },
+                "periodCode": {
+                  "type": "string"
+                },
+                "metrics": {
+                  "$ref": "#/components/schemas/AnalysisMetrics"
+                }
+              }
+            }
+          }
+        }
+      },
+      "TrendResult": {
+        "type": "object",
+        "description": "沿用 W6 TrendAnalysis 其余字段。",
+        "properties": {
+          "periodCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filters": {
+            "$ref": "#/components/schemas/AnalysisFilters"
+          },
+          "sampleRule": {
+            "type": "string"
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "periodCode": {
+                  "type": "string"
+                },
+                "hasSample": {
+                  "type": "boolean"
+                },
+                "metrics": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/AnalysisMetrics"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "BreakdownRow": {
+        "type": "object",
+        "required": [
+          "groupCode",
+          "groupName",
+          "enterpriseCount",
+          "baselineEmploymentTotal",
+          "periodEmploymentTotal",
+          "netChange",
+          "reductionTotal",
+          "increaseTotal",
+          "changePercent",
+          "decreaseEnterpriseCount",
+          "unchangedEnterpriseCount",
+          "increaseEnterpriseCount"
+        ],
+        "properties": {
+          "groupCode": {
+            "type": "string"
+          },
+          "groupName": {
+            "type": "string"
+          },
+          "enterpriseCount": {
+            "type": "integer"
+          },
+          "baselineEmploymentTotal": {
+            "type": "integer"
+          },
+          "periodEmploymentTotal": {
+            "type": "integer"
+          },
+          "netChange": {
+            "type": "integer"
+          },
+          "reductionTotal": {
+            "type": "integer"
+          },
+          "increaseTotal": {
+            "type": "integer"
+          },
+          "changePercent": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "decreaseEnterpriseCount": {
+            "type": "integer"
+          },
+          "unchangedEnterpriseCount": {
+            "type": "integer"
+          },
+          "increaseEnterpriseCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "BreakdownResult": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "groupBy",
+          "filters",
+          "items"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "groupBy": {
+            "type": "string",
+            "enum": [
+              "CITY",
+              "NATURE",
+              "INDUSTRY",
+              "CHANGE_DIRECTION"
+            ]
+          },
+          "filters": {
+            "$ref": "#/components/schemas/AnalysisFilters"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BreakdownRow"
+            }
+          }
+        }
+      },
+      "EnterpriseAnalysisRow": {
+        "type": "object",
+        "required": [
+          "enterpriseOrgId",
+          "enterpriseName",
+          "cityCode",
+          "cityName",
+          "reportId",
+          "submissionVersion",
+          "baselineSourcePeriodCode",
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "netChange",
+          "changePercent",
+          "changeDirection"
+        ],
+        "properties": {
+          "enterpriseOrgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "cityCode": {
+            "type": "string"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "natureCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "natureName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "industryCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "industryName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reportId": {
+            "type": "string"
+          },
+          "submissionVersion": {
+            "type": "integer"
+          },
+          "correctionVersion": {
+            "type": "integer"
+          },
+          "baselineSourcePeriodCode": {
+            "type": "string"
+          },
+          "baselineEmploymentCount": {
+            "type": "integer"
+          },
+          "periodEmploymentCount": {
+            "type": "integer"
+          },
+          "netChange": {
+            "type": "integer"
+          },
+          "changePercent": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "changeDirection": {
+            "type": "string",
+            "enum": [
+              "INCREASE",
+              "UNCHANGED",
+              "DECREASE"
+            ]
+          },
+          "primaryReasonCode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "primaryReasonDetail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "EnterpriseAnalysisResult": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EnterpriseAnalysisRow"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "size": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReportViewEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeReportView"
+      },
+      "SubmitEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeSubmitResult"
+      },
+      "BatchSubmitEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeBatchSubmitResult"
+      },
+      "NoticePageEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeNoticePage"
+      },
+      "NoticeDetailEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeNoticeDetail"
+      },
+      "DeleteNoticeEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeDeleteNoticeResult"
+      },
+      "EnterpriseOverviewEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeEnterpriseOverview"
+      },
+      "CityOverviewEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeCityOverview"
+      },
+      "ProvinceOverviewEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeProvinceOverview"
+      },
+      "ProgressEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeProgressResult"
+      },
+      "CompareEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeCompareResult"
+      },
+      "TrendEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeTrendResult"
+      },
+      "BreakdownEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeBreakdownResult"
+      },
+      "EnterpriseAnalysisEnvelope": {
+        "$ref": "#/components/schemas/EnvelopeEnterpriseAnalysisResult"
+      },
+      "EnvelopeReportView": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReportView"
+          }
+        }
+      },
+      "EnvelopeSubmitResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/SubmitResult"
+          }
+        }
+      },
+      "EnvelopeBatchSubmitResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/BatchSubmitResult"
+          }
+        }
+      },
+      "EnvelopeNoticePage": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/NoticePage"
+          }
+        }
+      },
+      "EnvelopeNoticeDetail": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/NoticeDetail"
+          }
+        }
+      },
+      "EnvelopeDeleteNoticeResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/DeleteNoticeResult"
+          }
+        }
+      },
+      "EnvelopeEnterpriseOverview": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/EnterpriseOverview"
+          }
+        }
+      },
+      "EnvelopeCityOverview": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/CityOverview"
+          }
+        }
+      },
+      "EnvelopeProvinceOverview": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProvinceOverview"
+          }
+        }
+      },
+      "EnvelopeProgressResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProgressResult"
+          }
+        }
+      },
+      "EnvelopeCompareResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/CompareResult"
+          }
+        }
+      },
+      "EnvelopeTrendResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/TrendResult"
+          }
+        }
+      },
+      "EnvelopeBreakdownResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/BreakdownResult"
+          }
+        }
+      },
+      "EnvelopeEnterpriseAnalysisResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "traceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "data": {
+            "$ref": "#/components/schemas/EnterpriseAnalysisResult"
+          }
+        }
+      },
+      "ReportProgressFilter": {
+        "type": "string",
+        "enum": [
+          "NOT_SUBMITTED",
+          "DRAFT",
+          "PENDING_CITY",
+          "PENDING_PROVINCE",
+          "APPROVED",
+          "RETURNED",
+          "VOIDED"
+        ]
+      }
+    }
+  },
+  "x-changeSummary": {
+    "modifiedCallableOperations": 7,
+    "newCallableOperations": 10,
+    "note": "本轮接口已在服务器部署；调用时仍须遵守登录角色、组织范围和版本检查。"
+  }
+}

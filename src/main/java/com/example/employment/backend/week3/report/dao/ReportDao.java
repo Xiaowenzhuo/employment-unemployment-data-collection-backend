@@ -86,6 +86,34 @@ public class ReportDao {
                 """, now, now, id, expectedVersion);
     }
 
+    public Optional<BaselineSource> previousSource(long orgId, String periodCode) {
+        return jdbc.query("""
+                SELECT r.id, r.period_code, r.period_employment_count
+                FROM enterprise_report r JOIN survey_period p ON p.code=r.period_code
+                JOIN survey_period selected ON selected.code=?
+                WHERE r.org_id=? AND r.submission_version>0 AND r.voided=false
+                  AND (p.start_at<selected.start_at OR
+                       (p.start_at=selected.start_at AND r.period_code<selected.code))
+                ORDER BY p.start_at DESC, r.period_code DESC LIMIT 1
+                """, (rs, row) -> new BaselineSource(rs.getLong("id"),
+                rs.getString("period_code"), (Integer) rs.getObject("period_employment_count")),
+                periodCode, orgId).stream().findFirst();
+    }
+
+    public int submitWithBaseline(long id, int expectedVersion, LocalDateTime now,
+            int baseline, String sourcePeriod, long sourceReportId, String sourceKind) {
+        return jdbc.update("""
+                UPDATE enterprise_report SET status='SUBMITTED_CITY',
+                    baseline_employment_count=?, baseline_source_period_code=?,
+                    baseline_source_report_id=?, baseline_source_kind=?,
+                    current_version=current_version+1, submission_version=submission_version+1,
+                    updated_at=?, submitted_at=?
+                WHERE id=? AND status IN ('DRAFT','RETURNED_CITY','RETURNED_PROVINCE')
+                  AND current_version=?
+                """, baseline, sourcePeriod, sourceReportId, sourceKind,
+                now, now, id, expectedVersion);
+    }
+
     public Optional<Integer> baseline(long orgId) {
         return jdbc.query("SELECT employment_count FROM enterprise_baseline WHERE org_id=?",
                 (rs, row) -> rs.getInt(1), orgId).stream().findFirst();
@@ -99,12 +127,15 @@ public class ReportDao {
             long filingId, int filingVersion) {
         ReportForm form = report.form();
         jdbc.update("INSERT INTO report_snapshot (report_id, submission_version, " + FORM_COLUMNS +
-                ", submitted_at, submitted_by, result, filing_id, filing_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED_CITY', ?, ?)",
+                ", submitted_at, submitted_by, result, filing_id, filing_version, " +
+                "baseline_source_period_code, baseline_source_report_id, baseline_source_kind) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SUBMITTED_CITY', ?, ?, ?, ?, ?)",
                 report.id(), version, form.baselineEmploymentCount(), form.periodEmploymentCount(),
                 form.otherReason(), form.reductionTypeCode(), form.primaryReasonCode(),
                 form.primaryReasonDetail(), form.secondaryReasonCode(), form.secondaryReasonDetail(),
                 form.tertiaryReasonCode(), form.tertiaryReasonDetail(), now, actorId,
-                filingId, filingVersion);
+                filingId, filingVersion, report.baselineSourcePeriodCode(),
+                report.baselineSourceReportId(), report.baselineSourceKind());
     }
 
     public List<Snapshot> snapshots(long reportId) {
@@ -116,7 +147,11 @@ public class ReportDao {
                 instant(rs, "submitted_at"), rs.getString("username"),
                 rs.getString("result"), rs.getObject("filing_id") == null ? null :
                         Long.toString(rs.getLong("filing_id")),
-                (Integer) rs.getObject("filing_version")), reportId);
+                (Integer) rs.getObject("filing_version"),
+                rs.getString("baseline_source_period_code"),
+                rs.getObject("baseline_source_report_id") == null ? null :
+                        Long.toString(rs.getLong("baseline_source_report_id")),
+                rs.getString("baseline_source_kind")), reportId);
     }
 
     public List<ListItem> list(long orgId, String periodCode, String status, int size, int offset) {
@@ -160,7 +195,9 @@ public class ReportDao {
         return new Report(rs.getLong("id"), rs.getLong("org_id"), rs.getString("period_code"),
                 rs.getString("status"), rs.getInt("current_version"),
                 rs.getInt("submission_version"), form(rs), instant(rs, "updated_at"),
-                instant(rs, "submitted_at"));
+                instant(rs, "submitted_at"), rs.getString("baseline_source_period_code"),
+                rs.getObject("baseline_source_report_id") == null ? null :
+                        rs.getLong("baseline_source_report_id"), rs.getString("baseline_source_kind"));
     }
 
     private static ReportForm form(ResultSet rs) throws SQLException {
@@ -179,4 +216,5 @@ public class ReportDao {
 
     public record OptionRow(String code, String category, String name,
             String parentTypeCode, String parentCode) { }
+    public record BaselineSource(long reportId, String periodCode, Integer employmentCount) { }
 }

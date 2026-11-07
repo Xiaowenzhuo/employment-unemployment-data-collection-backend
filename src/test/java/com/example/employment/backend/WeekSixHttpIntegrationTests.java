@@ -67,7 +67,7 @@ class WeekSixHttpIntegrationTests {
                 province,null));
         assertThat(trend.path("points").size()).isEqualTo(3);
         assertThat(trend.path("points").get(2).path("hasSample").asBoolean()).isFalse();
-        assertThat(trend.path("points").get(2).path("metrics").path("changePercent").isNull())
+        assertThat(trend.path("points").get(2).path("metrics").isNull())
                 .isTrue();
         assertThat(call("GET",comparePath,otherProvince,null).statusCode()).isEqualTo(400);
 

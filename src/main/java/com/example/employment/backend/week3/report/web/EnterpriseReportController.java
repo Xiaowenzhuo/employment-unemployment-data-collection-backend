@@ -58,7 +58,7 @@ public class EnterpriseReportController {
                 "otherReason", "reductionTypeCode", "primaryReasonCode", "primaryReasonDetail",
                 "secondaryReasonCode", "secondaryReasonDetail", "tertiaryReasonCode",
                 "tertiaryReasonDetail");
-        for (String field : new String[] {"expectedVersion", "baselineEmploymentCount",
+        for (String field : new String[] {"expectedVersion",
                 "periodEmploymentCount", "otherReason", "reductionTypeCode", "primaryReasonCode",
                 "primaryReasonDetail", "secondaryReasonCode", "secondaryReasonDetail",
                 "tertiaryReasonCode", "tertiaryReasonDetail"}) {
