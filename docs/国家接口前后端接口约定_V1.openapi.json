@@ -1,0 +1,275 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 国家上报模拟接口 V1",
+    "version": "national-mock-v1-2026-11-08",
+    "description": "依据《国家接口实施方案_V1组内定稿.md》约定。仅为项目内部 MockNationalAdapter 模拟接收；目标国家平台尚未接入。本文件是开发约定，所列新接口尚未部署。"
+  },
+  "servers": [{ "url": "/api/v1" }],
+  "security": [{ "bearerAuth": [] }],
+  "x-scope": {
+    "mode": "MOCK",
+    "receiver": "项目后端进程内 MockNationalAdapter",
+    "realNationalNetworkRequest": false,
+    "role": "仅 PROVINCE；CITY 和 ENTERPRISE 一律 403",
+    "migration": "在已执行的 V12 之后新增 V13__national_mock_batch.sql，不修改 V1 至 V12"
+  },
+  "x-fixedDecisions": {
+    "regionCodeFormat": "国家模拟报文 provinceCode 固定为云南前缀 53，cityCode 为对应6位州市代码的前4位，regionCode 为真实6位区县代码；既有地区选择和其他业务接口继续使用6位代码。例：昆明市530100对应报文cityCode=5301，五华区regionCode=530102。",
+    "realPeriod": "仅本省创建、provinceOrgId 非空的调查期可上报；公共旧演示期次 legacy=true 不可上报。期次的 demo 标记本身不构成阻止条件。",
+    "closedWindow": "当前 UTC 时间大于或等于调查期 closeAt 才算填报窗口关闭；报文的 periodStartAt 和 periodEndExclusiveAt 取调查期统计范围 startAt、endExclusiveAt，不取填报窗口时间。",
+    "missingDefinition": "本省当前备案 APPROVED 的企业，在该期无报表或仅有初始 DRAFT 报表，计为缺报；已作废报表单列 voidedCount，不重复算缺报。缺报允许确认，但必须 acknowledgeMissing=true。",
+    "preview": "readiness 每次实时重算，PREVIEW 不建批次、不锁报表。若本期已有批次，readiness 仍返回当前预览并标注 existingBatch；冻结内容只以批次详情的 payload 为准。",
+    "batchId": "首批批次号固定为 YN-{periodCode}-0001；本省本期只允许这一批，重试保持原编号。periodCode 沿用既有全局唯一的1至32位大写字母、数字或下划线。",
+    "serialization": "报文以 UTF-8 序列化一次并保存原始字节及小写64位十六进制 SHA-256。重试只读取这些字节，不重新序列化或取数。详情的 payload 是供页面读取的解析对象，前端不得据此重算哈希。",
+    "timeAndOrder": "所有时间均为 UTC ISO 8601 且以 Z 结尾。城市按4位 cityCode 升序、企业按6位 regionCode 再按 organizationCode 升序；发送尝试按 attemptNo 升序。",
+    "reasons": "otherReason 沿用已提交报表的必填文字；无减员时 reductionTypeCode、primaryReasonCode、primaryReasonDetail 为 JSON null。只上传方案要求的主要原因，不上传次要或第三原因字段。",
+    "scopeAndErrors": "省份仅由 Bearer 账号组织确定。外省或不存在期次、批次按404；非法字段与不合法报文按400；门槛、重复确认、重试状态及入批后修订/作废冲突按409。",
+    "attributeFallback": "企业名称、性质、行业优先读取提交快照绑定的备案版本；旧快照没有绑定时使用当前备案资料，按既有 CURRENT_FALLBACK 口径标记内部来源。若两处均无法取得报文必填属性，确认请求以400 PAYLOAD_INVALID拒绝，不生成批次。报文只包含本文件 NationalEnterprise 列出的属性字段，不另加来源标识。"
+  },
+  "x-backendRules": {
+    "sampleLock": "确认事务提交的瞬间，national_batch_item 中的每份报表开始锁定。并发作废或省级修订与确认上报只允许一个事务成功；入批后的上述两项写入一律409、reasonCode=LOCKED_BY_NATIONAL_BATCH。发送失败仍锁定。",
+    "stateMachine": "QUEUED -> SENDING -> MOCK_ACCEPTED；模拟异常或回执校验失败则 SENDING -> SEND_FAILED。SEND_FAILED 重试先回到 QUEUED；应用重启时遗留的 SENDING 转 SEND_FAILED。无其他状态或解锁流程。",
+    "retryAndReceipt": "首次发送和每次实际重试各追加一条 national_send_attempt；同一批不并行发送。QUEUED 的重复 retry 只确认已排队，不新增尝试。retryCount 为首次尝试以外已开始的发送尝试数。MockNationalAdapter 按 batchId 去重；只有回执的 batchId、acceptedEnterpriseCount、payloadSha256 均匹配冻结批次才可转 MOCK_ACCEPTED，否则转 SEND_FAILED。",
+    "timestampsAndErrors": "BatchSummary.lastSentAt 是最近一次发送尝试的开始时间，尚无尝试为 null；lastError 仅 SEND_FAILED 非空，成功重试后清空，历史错误保留在 attempts。receipt 仅 MOCK_ACCEPTED 非空。",
+    "sumCheck": "冻结前逐企业计算 netChange，逐市汇总，再从城市汇总计算全省值；任一城市、企业或全省合计不一致时以400 PAYLOAD_INVALID拒绝且不建立批次。"
+  },
+  "paths": {
+    "/province/national/periods/{periodCode}/readiness": {
+      "get": {
+        "tags": ["国家上报模拟"],
+        "summary": "查看本省指定调查期的上报门槛与实时预览",
+        "x-changeType": "NEW",
+        "parameters": [{ "$ref": "#/components/parameters/PeriodCodePath" }],
+        "responses": {
+          "200": { "description": "实时预览；即使不能上报也返回200，并用 blockers 给出原因", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReadinessEnvelope" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/province/national/batches": {
+      "post": {
+        "tags": ["国家上报模拟"],
+        "summary": "省级确认上报并冻结唯一首批批次",
+        "x-changeType": "NEW",
+        "description": "事务内重查门槛、锁样本、保存报文原始字节与明细；提交后立即锁定批内报表，异步模拟发送。成功响应固定为 QUEUED 快照，实际状态用详情刷新。重复确认同省同一期返回409及 existingBatchId。",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateBatchRequest" }, "example": { "periodCode": "P202611", "acknowledgeMissing": true } } } },
+        "responses": {
+          "201": { "description": "批次冻结成功，后台模拟发送已排队", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QueueEnvelope" }, "example": { "code": "OK", "message": "", "traceId": "example-trace", "data": { "batchId": "YN-P202611-0001", "status": "QUEUED", "mode": "MOCK", "enterpriseCount": 2, "detailPath": "/province/national/batches/YN-P202611-0001" } } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      },
+      "get": {
+        "tags": ["国家上报模拟"],
+        "summary": "分页查看本省模拟批次历史",
+        "x-changeType": "NEW",
+        "parameters": [
+          { "name": "periodCode", "in": "query", "schema": { "type": "string", "pattern": "^[A-Z0-9_]{1,32}$" }, "description": "可选，精确匹配本省期次代码" },
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/BatchStatus" }, "description": "可选，精确匹配" },
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/Size" }
+        ],
+        "responses": {
+          "200": { "description": "按 createdAt 降序、batchId 降序；无数据 items=[]、total=0", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BatchListEnvelope" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    },
+    "/province/national/batches/{batchId}": {
+      "get": {
+        "tags": ["国家上报模拟"],
+        "summary": "查看本省冻结批次、明细、发送尝试和模拟回执",
+        "x-changeType": "NEW",
+        "parameters": [{ "$ref": "#/components/parameters/BatchIdPath" }],
+        "responses": {
+          "200": { "description": "批次冻结内容；payload 不随当前业务数据变化", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BatchDetailEnvelope" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/province/national/batches/{batchId}/retry": {
+      "post": {
+        "tags": ["国家上报模拟"],
+        "summary": "继续发送原批次，不重新取数",
+        "x-changeType": "NEW",
+        "description": "请求无正文。仅 QUEUED、SEND_FAILED 可调用；SENDING、MOCK_ACCEPTED 返回409。QUEUED 已安排发送时不重复建立并行尝试。成功返回 QUEUED 快照，页面继续轮询详情。",
+        "parameters": [{ "$ref": "#/components/parameters/BatchIdPath" }],
+        "responses": {
+          "202": { "description": "原报文已排队继续发送", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QueueEnvelope" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/province/reports/{reportId}/corrections": {
+      "post": {
+        "tags": ["省级报表修订"],
+        "summary": "原省级修订接口增加已入国家模拟批次锁定检查",
+        "x-changeType": "MODIFIED",
+        "description": "请求字段和成功响应沿用 w5-api-contract.openapi.json。入批报表无论批次为 QUEUED、SENDING、MOCK_ACCEPTED 或 SEND_FAILED，一律返回409、data.reasonCode=LOCKED_BY_NATIONAL_BATCH；原报表和批次均不改写。",
+        "parameters": [{ "$ref": "#/components/parameters/ReportIdPath" }],
+        "responses": {
+          "200": { "description": "沿用第五周省级修订成功响应" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/province/reports/{reportId}/void": {
+      "post": {
+        "tags": ["省级报表作废"],
+        "summary": "原省级作废接口增加已入国家模拟批次锁定检查",
+        "x-changeType": "MODIFIED",
+        "description": "请求字段和成功响应沿用 w5-api-contract.openapi.json。入批报表无论批次为 QUEUED、SENDING、MOCK_ACCEPTED 或 SEND_FAILED，一律返回409、data.reasonCode=LOCKED_BY_NATIONAL_BATCH；原报表和批次均不改写。",
+        "parameters": [{ "$ref": "#/components/parameters/ReportIdPath" }],
+        "responses": {
+          "200": { "description": "沿用第五周省级作废成功响应" },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/province/work-overview": {
+      "get": {
+        "tags": ["省级工作概览"],
+        "summary": "原有省级工作概览增加国家上报卡片",
+        "x-changeType": "MODIFIED",
+        "description": "原字段 selectedPeriod、pendingFilingCount、pendingReportCount、approvedReportCount、cityProgress、entries 保持原义；data 增加 nationalReportCard。无调查期时 state=NO_PERIOD。",
+        "parameters": [{ "name": "periodCode", "in": "query", "schema": { "type": "string", "pattern": "^[A-Z0-9_]{1,32}$" }, "description": "可选，沿用原接口的所选期规则" }],
+        "responses": {
+          "200": { "description": "原概览加国家上报卡片", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProvinceOverviewEnvelope" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "signed token" } },
+    "parameters": {
+      "PeriodCodePath": { "name": "periodCode", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[A-Z0-9_]{1,32}$" } },
+      "BatchIdPath": { "name": "batchId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^YN-[A-Z0-9_]{1,32}-0001$" } },
+      "ReportIdPath": { "name": "reportId", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[1-9][0-9]*$" } },
+      "Page": { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } },
+      "Size": { "name": "size", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } }
+    },
+    "responses": {
+      "BadRequest": { "description": "400：参数、未知字段或报文内容不合法；data 可含 fieldErrors、reasonCode=PAYLOAD_INVALID", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "Unauthorized": { "description": "401：未登录或令牌无效", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "Forbidden": { "description": "403：角色不符", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "NotFound": { "description": "404：资源不存在或不属于本省", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "Conflict": { "description": "409：门槛、重复确认、重试状态或入批报表修改冲突；data.reasonCode 给出精确原因", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" }, "example": { "code": "CONFLICT", "message": "本期已有上报批次", "traceId": "example-trace", "data": { "reasonCode": "BATCH_EXISTS", "existingBatchId": "YN-P202611-0001", "blockers": [] } } } } }
+    },
+    "schemas": {
+      "ErrorEnvelope": { "type": "object", "required": ["code", "message", "data", "traceId"], "properties": { "code": { "type": "string", "enum": ["BAD_REQUEST", "UNAUTHORIZED", "FORBIDDEN", "NOT_FOUND", "CONFLICT"] }, "message": { "type": "string" }, "traceId": { "type": ["string", "null"] }, "data": { "type": ["object", "null"], "properties": { "reasonCode": { "type": "string", "enum": ["PAYLOAD_INVALID", "NOT_READY", "MISSING_ACKNOWLEDGEMENT", "BATCH_EXISTS", "RETRY_NOT_ALLOWED", "LOCKED_BY_NATIONAL_BATCH"] }, "existingBatchId": { "type": "string" }, "blockers": { "type": "array", "items": { "$ref": "#/components/schemas/Blocker" } }, "fieldErrors": { "type": "object", "additionalProperties": { "type": "string" } } } } } },
+      "ReadinessEnvelope": { "type": "object", "required": ["code", "message", "data", "traceId"], "properties": { "code": { "const": "OK" }, "message": { "type": "string" }, "traceId": { "type": ["string", "null"] }, "data": { "$ref": "#/components/schemas/Readiness" } } },
+      "Readiness": {
+        "type": "object",
+        "required": ["period", "canSubmit", "blockers", "requiresMissingAcknowledgement", "counts", "missingEnterprises", "preview", "existingBatch"],
+        "properties": {
+          "period": { "$ref": "#/components/schemas/Period" },
+          "canSubmit": { "type": "boolean", "description": "无任何阻止条件且无已存在批次时为 true；缺报本身不阻止预览或提交。" },
+          "blockers": { "type": "array", "items": { "$ref": "#/components/schemas/Blocker" }, "description": "按 LEGACY_PERIOD、WINDOW_NOT_CLOSED、PENDING_CITY、PENDING_PROVINCE、RETURNED_CITY、RETURNED_PROVINCE、NO_VALID_REPORT、BATCH_EXISTS 顺序返回所有命中的原因。" },
+          "requiresMissingAcknowledgement": { "type": "boolean", "description": "等于 counts.missingCount>0。" },
+          "counts": { "$ref": "#/components/schemas/ReadinessCounts" },
+          "missingEnterprises": { "type": "array", "items": { "$ref": "#/components/schemas/MissingEnterprise" } },
+          "preview": { "$ref": "#/components/schemas/Preview" },
+          "existingBatch": { "oneOf": [{ "$ref": "#/components/schemas/ExistingBatch" }, { "type": "null" }] }
+        }
+      },
+      "Period": { "type": "object", "required": ["periodCode", "periodLabel", "startAt", "endExclusiveAt", "closeAt", "windowStatus", "legacy"], "properties": { "periodCode": { "type": "string" }, "periodLabel": { "type": "string" }, "startAt": { "$ref": "#/components/schemas/UtcTime" }, "endExclusiveAt": { "$ref": "#/components/schemas/UtcTime" }, "closeAt": { "$ref": "#/components/schemas/UtcTime" }, "windowStatus": { "type": "string", "enum": ["NOT_OPEN", "OPEN", "CLOSED", "UNAVAILABLE"] }, "legacy": { "type": "boolean" } } },
+      "Blocker": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string", "enum": ["LEGACY_PERIOD", "WINDOW_NOT_CLOSED", "PENDING_CITY", "PENDING_PROVINCE", "RETURNED_CITY", "RETURNED_PROVINCE", "NO_VALID_REPORT", "BATCH_EXISTS"] }, "message": { "type": "string" } } },
+      "ReadinessCounts": { "type": "object", "required": ["approvedCount", "pendingCityCount", "pendingProvinceCount", "returnedCityCount", "returnedProvinceCount", "voidedCount", "missingCount"], "properties": { "approvedCount": { "type": "integer", "minimum": 0 }, "pendingCityCount": { "type": "integer", "minimum": 0 }, "pendingProvinceCount": { "type": "integer", "minimum": 0 }, "returnedCityCount": { "type": "integer", "minimum": 0 }, "returnedProvinceCount": { "type": "integer", "minimum": 0 }, "voidedCount": { "type": "integer", "minimum": 0 }, "missingCount": { "type": "integer", "minimum": 0 } }, "description": "按本省本期当前状态分类；各类互斥。approvedCount 等于 preview.summary.enterpriseCount。" },
+      "MissingEnterprise": { "type": "object", "required": ["enterpriseOrgId", "enterpriseName", "cityCode", "regionCode", "reportStatus"], "properties": { "enterpriseOrgId": { "type": "string", "pattern": "^[0-9]+$" }, "enterpriseName": { "type": "string" }, "cityCode": { "type": "string", "pattern": "^53[0-9]{2}$" }, "regionCode": { "type": "string", "pattern": "^53[0-9]{4}$" }, "reportStatus": { "type": ["string", "null"], "enum": [null, "DRAFT"] } } },
+      "Preview": { "type": "object", "required": ["summary", "cities", "enterprises"], "properties": { "summary": { "$ref": "#/components/schemas/NationalSummary" }, "cities": { "type": "array", "items": { "$ref": "#/components/schemas/NationalCity" } }, "enterprises": { "type": "array", "items": { "$ref": "#/components/schemas/NationalEnterprise" } } }, "description": "当前实时样本；城市和企业数组以 cityCode 关联。确认后应读取批次详情中的冻结 payload。" },
+      "NationalSummary": { "type": "object", "required": ["enterpriseCount", "baselineEmploymentTotal", "periodEmploymentTotal", "netChange"], "properties": { "enterpriseCount": { "type": "integer", "minimum": 0 }, "baselineEmploymentTotal": { "type": "integer", "minimum": 0 }, "periodEmploymentTotal": { "type": "integer", "minimum": 0 }, "netChange": { "type": "integer" } } },
+      "NationalCity": { "type": "object", "required": ["cityCode", "cityName", "enterpriseCount", "baselineEmploymentTotal", "periodEmploymentTotal", "netChange"], "properties": { "cityCode": { "type": "string", "pattern": "^53[0-9]{2}$" }, "cityName": { "type": "string" }, "enterpriseCount": { "type": "integer", "minimum": 1 }, "baselineEmploymentTotal": { "type": "integer", "minimum": 0 }, "periodEmploymentTotal": { "type": "integer", "minimum": 0 }, "netChange": { "type": "integer" } }, "description": "只返回有入批企业的城市；各市汇总之和严格等于全省汇总。" },
+      "NationalEnterprise": {
+        "type": "object",
+        "required": ["organizationCode", "enterpriseName", "cityCode", "regionCode", "natureCode", "industryCode", "reportId", "submissionVersion", "currentVersion", "baselineSourcePeriodCode", "baselineEmploymentCount", "periodEmploymentCount", "netChange", "reductionTypeCode", "primaryReasonCode", "primaryReasonDetail", "otherReason"],
+        "properties": {
+          "organizationCode": { "type": "string" }, "enterpriseName": { "type": "string" },
+          "cityCode": { "type": "string", "pattern": "^53[0-9]{2}$" }, "regionCode": { "type": "string", "pattern": "^53[0-9]{4}$" },
+          "natureCode": { "type": "string" }, "industryCode": { "type": "string" },
+          "reportId": { "type": "string", "pattern": "^[0-9]+$" },
+          "submissionVersion": { "type": "integer", "minimum": 1 }, "currentVersion": { "type": "integer", "minimum": 1 },
+          "baselineSourcePeriodCode": { "type": "string" },
+          "baselineEmploymentCount": { "type": "integer", "minimum": 0 }, "periodEmploymentCount": { "type": "integer", "minimum": 0 }, "netChange": { "type": "integer" },
+          "reductionTypeCode": { "type": ["string", "null"] }, "primaryReasonCode": { "type": ["string", "null"] }, "primaryReasonDetail": { "type": ["string", "null"] },
+          "otherReason": { "type": "string" }
+        },
+        "description": "只取当前 APPROVED_PROVINCE 且 voided=false 报表。名称、性质、行业优先取该提交快照绑定的备案版本；旧快照无绑定时按现有业务回退规则取值。净变化=调查期人数-建档人数。"
+      },
+      "NationalPayload": {
+        "type": "object",
+        "required": ["schemaVersion", "batchId", "mode", "provinceCode", "periodCode", "periodStartAt", "periodEndExclusiveAt", "generatedAt", "summary", "cities", "enterprises"],
+        "properties": {
+          "schemaVersion": { "const": "demo-1" }, "batchId": { "type": "string", "pattern": "^YN-[A-Z0-9_]{1,32}-0001$" }, "mode": { "const": "MOCK" }, "provinceCode": { "const": "53" },
+          "periodCode": { "type": "string" }, "periodStartAt": { "$ref": "#/components/schemas/UtcTime" }, "periodEndExclusiveAt": { "$ref": "#/components/schemas/UtcTime" }, "generatedAt": { "$ref": "#/components/schemas/UtcTime" },
+          "summary": { "$ref": "#/components/schemas/NationalSummary" }, "cities": { "type": "array", "items": { "$ref": "#/components/schemas/NationalCity" } }, "enterprises": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/NationalEnterprise" } }
+        },
+        "description": "后端冻结的 JSON 报文。不得包含登录名、密码哈希、联系人电话、邮箱或审计日志全文。",
+        "example": {
+          "schemaVersion": "demo-1", "batchId": "YN-P202611-0001", "mode": "MOCK", "provinceCode": "53", "periodCode": "P202611",
+          "periodStartAt": "2026-10-31T16:00:00Z", "periodEndExclusiveAt": "2026-11-30T16:00:00Z", "generatedAt": "2026-12-01T02:00:00Z",
+          "summary": { "enterpriseCount": 2, "baselineEmploymentTotal": 150, "periodEmploymentTotal": 145, "netChange": -5 },
+          "cities": [
+            { "cityCode": "5301", "cityName": "昆明市", "enterpriseCount": 1, "baselineEmploymentTotal": 100, "periodEmploymentTotal": 90, "netChange": -10 },
+            { "cityCode": "5303", "cityName": "曲靖市", "enterpriseCount": 1, "baselineEmploymentTotal": 50, "periodEmploymentTotal": 55, "netChange": 5 }
+          ],
+          "enterprises": [
+            { "organizationCode": "DEMO01", "enterpriseName": "演示企业甲", "cityCode": "5301", "regionCode": "530102", "natureCode": "DEMO_NATURE_1_1", "industryCode": "DEMO_INDUSTRY_1_1", "reportId": "101", "submissionVersion": 1, "currentVersion": 3, "baselineSourcePeriodCode": "P202610", "baselineEmploymentCount": 100, "periodEmploymentCount": 90, "netChange": -10, "reductionTypeCode": "TYPE_ECONOMIC_LAYOFF", "primaryReasonCode": "REASON_INSUFFICIENT_ORDERS", "primaryReasonDetail": "订单不足", "otherReason": "无" },
+            { "organizationCode": "DEMO02", "enterpriseName": "演示企业乙", "cityCode": "5303", "regionCode": "530302", "natureCode": "DEMO_NATURE_1_1", "industryCode": "DEMO_INDUSTRY_1_1", "reportId": "102", "submissionVersion": 1, "currentVersion": 2, "baselineSourcePeriodCode": "P202610", "baselineEmploymentCount": 50, "periodEmploymentCount": 55, "netChange": 5, "reductionTypeCode": null, "primaryReasonCode": null, "primaryReasonDetail": null, "otherReason": "无" }
+          ]
+        }
+      },
+      "UtcTime": { "type": "string", "format": "date-time", "pattern": "Z$", "description": "UTC ISO 8601，例如 2026-12-01T02:00:00Z" },
+      "CreateBatchRequest": { "type": "object", "additionalProperties": false, "required": ["periodCode", "acknowledgeMissing"], "properties": { "periodCode": { "type": "string", "pattern": "^[A-Z0-9_]{1,32}$" }, "acknowledgeMissing": { "type": "boolean", "description": "missingCount>0 时必须为 true；为0时 true/false 均接受。" } } },
+      "BatchStatus": { "type": "string", "enum": ["QUEUED", "SENDING", "MOCK_ACCEPTED", "SEND_FAILED"] },
+      "ExistingBatch": { "type": "object", "required": ["batchId", "status"], "properties": { "batchId": { "type": "string" }, "status": { "$ref": "#/components/schemas/BatchStatus" } } },
+      "QueueEnvelope": { "type": "object", "required": ["code", "message", "data", "traceId"], "properties": { "code": { "const": "OK" }, "message": { "type": "string" }, "traceId": { "type": ["string", "null"] }, "data": { "$ref": "#/components/schemas/QueueResult" } } },
+      "QueueResult": { "type": "object", "required": ["batchId", "status", "mode", "enterpriseCount", "detailPath"], "properties": { "batchId": { "type": "string" }, "status": { "const": "QUEUED" }, "mode": { "const": "MOCK" }, "enterpriseCount": { "type": "integer", "minimum": 1 }, "detailPath": { "type": "string" } } },
+      "BatchListEnvelope": { "type": "object", "required": ["code", "message", "data", "traceId"], "properties": { "code": { "const": "OK" }, "message": { "type": "string" }, "traceId": { "type": ["string", "null"] }, "data": { "$ref": "#/components/schemas/BatchList" } } },
+      "BatchList": { "type": "object", "required": ["items", "total", "page", "size"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/BatchSummary" } }, "total": { "type": "integer", "minimum": 0 }, "page": { "type": "integer", "minimum": 0 }, "size": { "type": "integer", "minimum": 1 } } },
+      "BatchSummary": { "type": "object", "required": ["batchId", "periodCode", "mode", "status", "enterpriseCount", "payloadSha256", "createdAt", "lastSentAt", "retryCount", "lastError"], "properties": { "batchId": { "type": "string" }, "periodCode": { "type": "string" }, "mode": { "const": "MOCK" }, "status": { "$ref": "#/components/schemas/BatchStatus" }, "enterpriseCount": { "type": "integer", "minimum": 1 }, "payloadSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "createdAt": { "$ref": "#/components/schemas/UtcTime" }, "lastSentAt": { "oneOf": [{ "$ref": "#/components/schemas/UtcTime" }, { "type": "null" }] }, "retryCount": { "type": "integer", "minimum": 0 }, "lastError": { "type": ["string", "null"] } } },
+      "BatchDetailEnvelope": { "type": "object", "required": ["code", "message", "data", "traceId"], "properties": { "code": { "const": "OK" }, "message": { "type": "string" }, "traceId": { "type": ["string", "null"] }, "data": { "$ref": "#/components/schemas/BatchDetail" } } },
+      "BatchDetail": { "allOf": [{ "$ref": "#/components/schemas/BatchSummary" }, { "type": "object", "required": ["payload", "attempts", "receipt"], "properties": { "payload": { "$ref": "#/components/schemas/NationalPayload" }, "attempts": { "type": "array", "items": { "$ref": "#/components/schemas/SendAttempt" } }, "receipt": { "oneOf": [{ "$ref": "#/components/schemas/MockReceipt" }, { "type": "null" }] } } }] },
+      "SendAttempt": { "type": "object", "required": ["attemptNo", "startedAt", "finishedAt", "result", "errorSummary", "mockReceiptId"], "properties": { "attemptNo": { "type": "integer", "minimum": 1 }, "startedAt": { "$ref": "#/components/schemas/UtcTime" }, "finishedAt": { "oneOf": [{ "$ref": "#/components/schemas/UtcTime" }, { "type": "null" }] }, "result": { "type": "string", "enum": ["SENDING", "ACCEPTED", "FAILED"] }, "errorSummary": { "type": ["string", "null"] }, "mockReceiptId": { "type": ["string", "null"] } } },
+      "MockReceipt": { "type": "object", "required": ["batchId", "mockReceiptId", "result", "receivedAt", "acceptedEnterpriseCount", "payloadSha256"], "properties": { "batchId": { "type": "string" }, "mockReceiptId": { "type": "string", "description": "MockNationalAdapter 按 batchId 去重，同一批次重复发送返回相同 ID。" }, "result": { "const": "ACCEPTED" }, "receivedAt": { "$ref": "#/components/schemas/UtcTime" }, "acceptedEnterpriseCount": { "type": "integer", "minimum": 1 }, "payloadSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } } },
+      "ProvinceOverviewEnvelope": { "type": "object", "required": ["code", "message", "data", "traceId"], "properties": { "code": { "const": "OK" }, "message": { "type": "string" }, "traceId": { "type": ["string", "null"] }, "data": { "$ref": "#/components/schemas/ProvinceOverview" } } },
+      "ProvinceOverview": { "type": "object", "required": ["selectedPeriod", "pendingFilingCount", "pendingReportCount", "approvedReportCount", "cityProgress", "entries", "nationalReportCard"], "properties": { "selectedPeriod": { "type": ["object", "null"], "description": "原字段，结构与老师反馈修订接口约定一致。" }, "pendingFilingCount": { "type": "integer", "minimum": 0 }, "pendingReportCount": { "type": "integer", "minimum": 0 }, "approvedReportCount": { "type": "integer", "minimum": 0 }, "cityProgress": { "type": "object", "description": "原字段，结构不变。" }, "entries": { "type": "array", "items": { "type": "object" }, "description": "原字段，结构不变。" }, "nationalReportCard": { "$ref": "#/components/schemas/NationalReportCard" } } },
+      "NationalReportCard": { "type": "object", "required": ["periodCode", "state", "label", "route", "batchId", "canStart", "canRetry"], "properties": { "periodCode": { "type": ["string", "null"] }, "state": { "type": "string", "enum": ["NO_PERIOD", "BLOCKED", "READY", "QUEUED", "SENDING", "MOCK_ACCEPTED", "SEND_FAILED"] }, "label": { "type": "string", "description": "NO_PERIOD=暂无调查期，BLOCKED=本期暂不可上报，READY=本期可上报，QUEUED/SENDING=模拟发送中，MOCK_ACCEPTED=模拟已接收，SEND_FAILED=发送失败。" }, "route": { "type": "string", "const": "/province/national" }, "batchId": { "type": ["string", "null"] }, "canStart": { "type": "boolean", "description": "仅 READY 为 true。" }, "canRetry": { "type": "boolean", "description": "仅 QUEUED 或 SEND_FAILED 为 true。" } }, "description": "优先显示已存在批次状态；无批次时按 readiness 的 canSubmit 显示 READY 或 BLOCKED；无所选期显示 NO_PERIOD。" }
+    }
+  },
+  "x-frontendFlow": [
+    "调查期列表沿用已有 GET /province/periods；逐期请求 readiness 获得上报状态与数量，旧公共演示期次显示阻止原因。",
+    "省级进入国家上报页面后请求 readiness，显示全省合计、按 cityCode 分组的企业明细及排除数量；不可在预览中修改报表。",
+    "点击确认时显示 MOCK 提示；missingCount>0 必须勾选知晓，发送 POST /batches 后立即禁用重复点击。",
+    "201 返回的 QUEUED 只是创建时快照；页面轮询 GET /batches/{batchId} 展示 QUEUED、SENDING、MOCK_ACCEPTED 或 SEND_FAILED。不得显示国家已接收。",
+    "QUEUED 或 SEND_FAILED 才展示继续发送；POST /retry 不发送报文正文或新版本字段。",
+    "省级修订或作废已入批报表时，既有接口返回409、data.reasonCode=LOCKED_BY_NATIONAL_BATCH，前端显示已纳入上报批次，本版不允许修改。",
+    "真实国家平台接口、真实上报成功状态及制造模拟失败按钮均不属于 V1。"
+  ]
+}

@@ -3,6 +3,8 @@ package com.example.employment.backend.week5.correction.service;
 import com.example.employment.backend.common.ConflictException;
 import com.example.employment.backend.common.FieldErrorException;
 import com.example.employment.backend.common.NotFoundException;
+import com.example.employment.backend.national.repository.NationalRepository;
+import com.example.employment.backend.national.service.NationalApiException;
 import com.example.employment.backend.week1.identity.model.UserAccount;
 import com.example.employment.backend.week2.shared.service.ScopeService;
 import com.example.employment.backend.week3.report.dao.ReportDao.OptionRow;
@@ -24,6 +26,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -35,11 +38,13 @@ public class CorrectionService {
     private final CorrectionRepository corrections;
     private final ReportRepository reports;
     private final ScopeService scopes;
+    private final NationalRepository national;
     public CorrectionService(CorrectionRepository corrections, ReportRepository reports,
-            ScopeService scopes) {
+            ScopeService scopes, NationalRepository national) {
         this.corrections = corrections;
         this.reports = reports;
         this.scopes = scopes;
+        this.national = national;
     }
 
     public CorrectionDetail detail(UserAccount actor, String rawId) {
@@ -58,6 +63,7 @@ public class CorrectionService {
         String reason = reason(rawReason);
         versions(expected, submission);
         Report report = scoped(actor, rawId, true);
+        nationalLock(report.id());
         current(report, expected, submission);
         if (changes.isEmpty()) throw field("changes", "至少修改一个字段");
         Map<String, Object> old = values(report.form());
@@ -98,6 +104,7 @@ public class CorrectionService {
         String reason = reason(rawReason);
         versions(expected, submission);
         Report report = scoped(actor, rawId, true);
+        nationalLock(report.id());
         current(report, expected, submission);
         LocalDateTime now = now();
         if (corrections.voidReport(report.id(), expected, submission, now) != 1) throw conflict();
@@ -117,6 +124,10 @@ public class CorrectionService {
         Report report = reports.byId(id, lock).orElseThrow(NotFoundException::new);
         scopes.visibleFiling(report.orgId(), province);
         return report;
+    }
+    private void nationalLock(long reportId) {
+        if (national.containsReport(reportId)) throw new NationalApiException(HttpStatus.CONFLICT,
+                "已纳入上报批次，本版不允许修改", "LOCKED_BY_NATIONAL_BATCH", Map.of());
     }
     private Snapshot snapshot(Report report) {
         return reports.snapshots(report.id()).stream()

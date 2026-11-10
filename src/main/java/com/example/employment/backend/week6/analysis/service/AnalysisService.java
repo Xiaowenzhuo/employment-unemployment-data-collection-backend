@@ -5,7 +5,7 @@ import com.example.employment.backend.week1.identity.model.UserAccount;
 import com.example.employment.backend.week2.shared.service.ScopeService;
 import com.example.employment.backend.week3.period.model.SurveyPeriod;
 import com.example.employment.backend.week3.period.repository.PeriodRepository;
-import com.example.employment.backend.week5.data.service.ProvinceDataService;
+import com.example.employment.backend.midterm.warehouse.service.WarehouseDataService;
 import com.example.employment.backend.week5.data.service.ProvinceDataService.DataSet;
 import com.example.employment.backend.week6.analysis.dao.AnalysisDao.Option;
 import com.example.employment.backend.week6.analysis.repository.AnalysisRepository;
@@ -26,11 +26,11 @@ import org.springframework.stereotype.Service;
 public class AnalysisService {
     public static final String SAMPLE_RULE =
             "APPROVED_PROVINCE_NOT_VOIDED_LATEST_SUBMISSION_EFFECTIVE_VALUES";
-    private final ProvinceDataService data;
+    private final WarehouseDataService data;
     private final PeriodRepository periods;
     private final ScopeService scopes;
     private final AnalysisRepository options;
-    public AnalysisService(ProvinceDataService data, PeriodRepository periods,
+    public AnalysisService(WarehouseDataService data, PeriodRepository periods,
             ScopeService scopes, AnalysisRepository options) {
         this.data = data; this.periods = periods; this.scopes = scopes; this.options = options;
     }

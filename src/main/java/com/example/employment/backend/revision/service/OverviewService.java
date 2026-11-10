@@ -12,6 +12,8 @@ import com.example.employment.backend.week3.period.repository.PeriodRepository;
 import com.example.employment.backend.week3.report.model.ReportViews.ReportView;
 import com.example.employment.backend.week3.report.service.ReportService;
 import com.example.employment.backend.week6.notice.service.NoticeService;
+import com.example.employment.backend.national.service.NationalService;
+import com.example.employment.backend.midterm.progress.service.CoverageService;
 import com.example.employment.backend.revision.dao.ProgressDao.Row;
 import com.example.employment.backend.revision.repository.ProgressRepository;
 import java.time.Instant;
@@ -31,11 +33,16 @@ public class OverviewService {
     private final FilingService filings;
     private final ReportService reports;
     private final NoticeService notices;
+    private final NationalService national;
+    private final CoverageService coverage;
     public OverviewService(ScopeService scopes,RegionScopeRepository regions,
             PeriodRepository periods,ProgressRepository progress,FilingService filings,
-            ReportService reports,NoticeService notices) {
+            ReportService reports,NoticeService notices,NationalService national,
+            CoverageService coverage) {
         this.scopes=scopes;this.regions=regions;this.periods=periods;this.progress=progress;
         this.filings=filings;this.reports=reports;this.notices=notices;
+        this.national=national;
+        this.coverage=coverage;
     }
 
     public Map<String,Object> enterprise(UserAccount actor,String code) {
@@ -71,6 +78,14 @@ public class OverviewService {
         out.put("selectedPeriod",periodView(selected));out.put("filingStatus",filingStatus);
         out.put("reportStatus",reportStatus);out.put("latestReturnReason",reason);
         out.put("currentStep",step);out.put("nextAction",action);
+        String homeState=reportStatus==null?"NOT_SAVED":switch(reportStatus) {
+            case "DRAFT"->"DRAFT_SAVED";
+            case "RETURNED_CITY","RETURNED_PROVINCE"->"RETURNED";
+            default->"SUBMITTED";
+        };
+        out.put("homeState",homeState);out.put("homePeriod",periodView(selected));
+        out.put("homeReturnReason","RETURNED".equals(homeState)?reason:null);
+        out.put("homeNextAction",selected==null?action("查看调查期","/enterprise/periods",false):action);
         out.put("visibleNoticeCount",notices.list(actor,0,1).total());
         return out;
     }
@@ -95,6 +110,13 @@ public class OverviewService {
         out.put("noticeEntry",Map.of("label","通知管理","route","/city/notices"));
         out.put("nextAction",action("审核待办",selected==null?"/city/reports":
                 "/city/reports?periodCode="+selected.code(),selected!=null));
+        var cityCoverage=coverage.count(rows);
+        out.put("eligibleEnterpriseCount",cityCoverage.eligibleEnterpriseCount());
+        out.put("realSubmittedCount",cityCoverage.realSubmittedCount());
+        out.put("proxyCount",cityCoverage.proxyCount());
+        out.put("notCoveredCount",cityCoverage.notCoveredCount());
+        out.put("pendingCount",cityCoverage.pendingCount());
+        out.put("returnedCount",cityCoverage.returnedCount());
         return out;
     }
 
@@ -111,7 +133,7 @@ public class OverviewService {
         for (Row row:rows) {
             names.put(row.cityCode(),row.cityName());
             long[] values=cities.computeIfAbsent(row.cityCode(),key->new long[3]);
-            if ("APPROVED".equals(row.filingStatus())) {
+            if (row.eligible()) {
                 values[0]++;
                 if (List.of("SUBMITTED_PROVINCE","RETURNED_PROVINCE","APPROVED_PROVINCE")
                         .contains(row.effectiveReportStatus())) values[1]++;
@@ -122,9 +144,14 @@ public class OverviewService {
         long sentCities=0;
         for (var entry:cities.entrySet()) {
             long[] values=entry.getValue();if (values[1]>0) sentCities++;
+            var local=coverage.count(rows.stream()
+                    .filter(r->entry.getKey().equals(r.cityCode())).toList());
             cityItems.add(Map.of("cityCode",entry.getKey(),"cityName",names.get(entry.getKey()),
                     "eligibleEnterpriseCount",values[0],"submittedEnterpriseCount",values[1],
-                    "notSubmittedEnterpriseCount",values[2]));
+                    "notSubmittedEnterpriseCount",values[2],
+                    "realSubmittedCount",local.realSubmittedCount(),
+                    "proxyCount",local.proxyCount(),"notCoveredCount",local.notCoveredCount(),
+                    "pendingCount",local.pendingCount(),"returnedCount",local.returnedCount()));
         }
         Map<String,Object> cityProgress=new LinkedHashMap<>();
         cityProgress.put("submittedCityCount",sentCities);
@@ -136,9 +163,11 @@ public class OverviewService {
         out.put("pendingReportCount",count(rows,"SUBMITTED_PROVINCE"));
         out.put("approvedReportCount",count(rows,"APPROVED_PROVINCE"));
         out.put("cityProgress",cityProgress);
+        out.put("provinceTotals",coverage.count(rows));
         out.put("entries",List.of(Map.of("label","备案审核","route","/province/filings"),
                 Map.of("label","报表审核","route","/province/reports"),
                 Map.of("label","企业进度","route","/province/enterprise-progress")));
+        out.put("nationalReportCard",national.card(actor,selected==null?null:selected.code()));
         return out;
     }
 

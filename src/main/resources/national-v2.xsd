@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="ProvinceReport">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Header"><xs:complexType><xs:sequence>
+          <xs:element name="BatchId" type="xs:string"/>
+          <xs:element name="Mode" type="xs:string"/>
+          <xs:element name="ProvinceCode" type="xs:string"/>
+          <xs:element name="PeriodCode" type="xs:string"/>
+          <xs:element name="PeriodStartAt" type="xs:dateTime"/>
+          <xs:element name="PeriodEndExclusiveAt" type="xs:dateTime"/>
+          <xs:element name="GeneratedAt" type="xs:dateTime"/>
+        </xs:sequence></xs:complexType></xs:element>
+        <xs:element name="Summary"><xs:complexType><xs:sequence>
+          <xs:element name="EnterpriseCount" type="xs:nonNegativeInteger"/>
+          <xs:element name="RealCount" type="xs:nonNegativeInteger"/>
+          <xs:element name="ProxyCount" type="xs:nonNegativeInteger"/>
+          <xs:element name="BaselineEmploymentTotal" type="xs:nonNegativeInteger"/>
+          <xs:element name="PeriodEmploymentTotal" type="xs:nonNegativeInteger"/>
+          <xs:element name="NetChange" type="xs:integer"/>
+        </xs:sequence></xs:complexType></xs:element>
+        <xs:element name="Enterprises"><xs:complexType><xs:sequence>
+          <xs:element name="Enterprise" minOccurs="0" maxOccurs="unbounded">
+            <xs:complexType><xs:sequence>
+              <xs:element name="OrganizationCode" type="xs:string"/>
+              <xs:element name="EnterpriseName" type="xs:string"/>
+              <xs:element name="RegionCode" type="xs:string"/>
+              <xs:element name="NatureCode" type="xs:string"/>
+              <xs:element name="IndustryCode" type="xs:string"/>
+              <xs:choice>
+                <xs:sequence><xs:element name="ReportId" type="xs:positiveInteger"/>
+                  <xs:element name="SubmissionVersion" type="xs:positiveInteger"/>
+                  <xs:element name="CurrentVersion" type="xs:positiveInteger"/>
+                  <xs:element name="BaselineSourcePeriodCode" type="xs:string"/></xs:sequence>
+                <xs:sequence><xs:element name="ProxySourcePeriodCode" type="xs:string"/>
+                  <xs:element name="SourceReportId" type="xs:positiveInteger"/>
+                  <xs:element name="SourceSubmissionVersion" type="xs:positiveInteger"/>
+                  <xs:element name="SourceCurrentVersion" type="xs:positiveInteger"/></xs:sequence>
+              </xs:choice>
+              <xs:element name="BaselineEmploymentCount" type="xs:nonNegativeInteger"/>
+              <xs:element name="PeriodEmploymentCount" type="xs:nonNegativeInteger"/>
+              <xs:element name="NetChange" type="xs:integer"/>
+              <xs:sequence minOccurs="0"><xs:element name="ReductionTypeCode" type="xs:string"/>
+                <xs:element name="PrimaryReasonCode" type="xs:string"/>
+                <xs:element name="PrimaryReasonDetail" type="xs:string"/>
+                <xs:element name="OtherReason" type="xs:string"/></xs:sequence>
+            </xs:sequence><xs:attribute name="reportMode" use="required">
+              <xs:simpleType><xs:restriction base="xs:string"><xs:enumeration value="REAL"/>
+                <xs:enumeration value="PROXY"/></xs:restriction></xs:simpleType>
+            </xs:attribute></xs:complexType>
+          </xs:element>
+        </xs:sequence></xs:complexType></xs:element>
+      </xs:sequence><xs:attribute name="schemaVersion" use="required" fixed="demo-2" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

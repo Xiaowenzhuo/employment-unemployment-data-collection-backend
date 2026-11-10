@@ -6,6 +6,7 @@ import com.example.employment.backend.week2.shared.service.ScopeService;
 import com.example.employment.backend.week3.period.repository.PeriodRepository;
 import com.example.employment.backend.revision.dao.ProgressDao.Row;
 import com.example.employment.backend.revision.repository.ProgressRepository;
+import com.example.employment.backend.midterm.progress.service.CoverageService;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,8 +17,10 @@ public class ProgressService {
     private final ProgressRepository progress;
     private final PeriodRepository periods;
     private final ScopeService scopes;
-    public ProgressService(ProgressRepository progress,PeriodRepository periods,ScopeService scopes) {
-        this.progress=progress;this.periods=periods;this.scopes=scopes;
+    private final CoverageService coverage;
+    public ProgressService(ProgressRepository progress,PeriodRepository periods,ScopeService scopes,
+            CoverageService coverage) {
+        this.progress=progress;this.periods=periods;this.scopes=scopes;this.coverage=coverage;
     }
     public List<Row> all(UserAccount actor,String periodCode) {
         long provinceId=scopes.province(actor).id();
@@ -56,6 +59,8 @@ public class ProgressService {
         result.put("periodCode",periodCode);result.put("summary",summary);
         result.put("items",items);result.put("total",filtered.size());
         result.put("page",page);result.put("size",size);
+        result.put("coverageSummary",coverage.count(all.stream()
+                .filter(row->cityCode==null || cityCode.equals(row.cityCode())).toList()));
         return result;
     }
     private Map<String,Object> view(Row row) {
@@ -67,6 +72,17 @@ public class ProgressService {
         item.put("reportStatus",row.effectiveReportStatus());
         item.put("reportId",row.reportId()==null?null:Long.toString(row.reportId()));
         item.put("reportVoided",row.voided());item.put("lastSubmittedAt",row.submittedAt());
+        item.put("eligible",row.eligible());item.put("coverageMode",row.coverageMode());
+        Map<String,Object> source=null;
+        if (row.proxySourceReportId()!=null) {
+            source=new LinkedHashMap<>();
+            source.put("sourcePeriodCode",row.proxySourcePeriodCode());
+            source.put("sourceReportId",Long.toString(row.proxySourceReportId()));
+            source.put("sourceSubmissionVersion",row.proxySubmissionVersion());
+            source.put("sourceCurrentVersion",row.proxyCurrentVersion());
+            source.put("periodEmploymentCount",row.proxyEmploymentCount());
+        }
+        item.put("proxySource",source);
         return item;
     }
     private static boolean matches(String filter,String raw) {

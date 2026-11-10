@@ -1,0 +1,3816 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 中期汇报反馈 V2 前后端接口约定",
+    "version": "midterm-v2-2026-11-10",
+    "description": "依据《中期汇报反馈需求与三人分工_V2执行稿.md》制定的开发交接契约。本文是相对于现有 W1—W6、老师反馈修订及国家 V1 契约的增量文件；所列 V2 接口与修改已部署。所有前端 HTTP 请求和响应仍为 JSON，XML 仅是后端冻结后经 RabbitMQ 发送给项目内部模拟接收端的业务报文。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "x-changeSummary": {
+    "NEW": [
+      "GET /province/periods/year/preview",
+      "POST /province/periods/year",
+      "POST /province/national/periods/{periodCode}/proxy-fill",
+      "DELETE /province/national/periods/{periodCode}/proxy-fill"
+    ],
+    "MODIFIED": [
+      "GET /province/work-overview",
+      "GET /city/work-overview",
+      "GET /enterprise/work-overview",
+      "GET /province/enterprise-progress",
+      "GET /province/national/periods/{periodCode}/readiness",
+      "POST /province/national/batches",
+      "GET /province/national/batches",
+      "GET /province/national/batches/{batchId}",
+      "POST /province/national/batches/{batchId}/retry",
+      "POST /province/reports/{reportId}/corrections",
+      "POST /province/reports/{reportId}/void"
+    ],
+    "BEHAVIOR_MODIFIED": [
+      "GET /province/analysis/cities",
+      "GET /province/analysis/compare",
+      "GET /province/analysis/trend",
+      "GET /province/analysis/breakdown",
+      "GET /province/analysis/enterprises"
+    ],
+    "UNCHANGED": [
+      "POST /province/periods",
+      "现有各端报表、审核、备案、登录接口"
+    ]
+  },
+  "x-fixedDecisions": {
+    "yearRange": "year 为 2000—2100 的整数。GET 年度预览只读；POST 年度创建成功固定返回 200，包含 created[]、existing[]、total=12。省份由令牌决定。按北京时间构造边界并转 UTC Z：统计期当月1日00:00至次月1日00:00；填报窗口次月1日00:00至次月8日00:00。期次代码 PYYYYMM，demo=false。相同代码且全部四个时间边界与省份一致视为 EXISTING；同代码不同边界或与任一其他本省真实期次重叠为 CONFLICT。任何冲突使整次 POST 409、零新增；旧单期接口不变。",
+    "coverage": "应报企业须在期次 endExclusiveAt 之前已有 APPROVED 备案，且当前仍归属于对应省市。realSubmittedCount=本期当前未作废且 submissionVersion>0 的真实 enterprise_report 数，审核中和退回也算真实已报；proxyCount=本期未冻结的有效代填数，不与真实已报重叠；notCoveredCount=eligible-realSubmitted-proxy。pendingCount=SUBMITTED_CITY+SUBMITTED_PROVINCE，returnedCount=RETURNED_CITY+RETURNED_PROVINCE，二者是提示数并可与 realSubmittedCount 重叠，不能加到分母。分母为 0 时前端显示暂无应报企业，进度条不计算为 100%。",
+    "home": "homeState 优先级 RETURNED > SUBMITTED > DRAFT_SAVED > NOT_SAVED；其中 RETURNED 为当前报表退回，SUBMITTED 为当前真实报表已正式提交且未退回，DRAFT_SAVED 为本期存在未提交草稿，NOT_SAVED 为无本期报表。homeReturnReason 仅 RETURNED 非空。无所选期返回 homePeriod=null、NOT_SAVED 和禁用的下一动作。备案资格及期次选择仍由原业务接口决定。旧 currentStep 仅为兼容，不用于企业首页状态图。",
+    "proxy": "proxyVersion 为本省本期代填集合从 0 起的版本号；POST/DELETE 成功后加 1。expectedVersion 可选，传入时必须等于当前版本，否则 409 VERSION_CONFLICT。POST 不接受企业明细，按全部当前缺报企业原子刷新代填；若任何一家无此前真实、省审通过、未作废的月度报表，则 409 NO_REAL_SOURCE，data.enterpriseOrgIds 列出全部缺源企业，本次零写入。来源取 startAt 早于目标期的最近真实月度调查期；可跳过连续缺报月，绝不取旧代填。未提交/仅草稿/本期已作废可代填，待审和退回不可绕过。DELETE 只撤销本期未冻结的全部代填。批次冻结后两种操作均 409。 readiness.counts.missingCount=eligibleCount-realCount-proxyCount，仅表示尚未覆盖；fillable 和 noRealSource 只列这批未覆盖企业。建批时再次校验所有代填的真实来源仍有效且版本未变化，否则 409 PROXY_SOURCE_CHANGED，须重新生成。",
+    "batch": "V2 POST 只接受 periodCode 和 schemaVersion=demo-2；不接受 acknowledgeMissing。应报企业全部由当前有效省审通过真实报表或有效代填覆盖，且无待审/退回，窗口已关闭，至少一家应报，方可建批；同省同期唯一。V1 历史批次维持原 JSON 冻结只读且占用原唯一期次，不能覆盖或转换为 V2。V2 新批次号仍为 YN-{periodCode}-0001。成功 201 QUEUED，随后异步 SENDING、ASSEMBLING、MOCK_ACCEPTED 或 SEND_FAILED；仅 V2 QUEUED/SEND_FAILED 可 retry，成功 202。V1 旧批次 retry 返回 409 V1_READ_ONLY。 批次预览 summary 的 enterpriseCount=eligibleCount，realCount+proxyCount=enterpriseCount；零应报时不可建批。",
+    "payload": "V2 payloadFormat=XML、mode=MOCK_QUEUE，UTF-8 XML 原始字节和小写 SHA-256 在确认事务中一次冻结。根元素 ProvinceReport 的 schemaVersion 属性为 demo-2，只含 Header、Summary、Enterprises；无 Cities。每个应报企业恰一条 Enterprise，按 6 位 regionCode、organizationCode 升序；REAL 与 PROXY 由 reportMode 属性区分。REAL 含本期 ReportId、SubmissionVersion、CurrentVersion、BaselineSourcePeriodCode；PROXY 含 ProxySourcePeriodCode、SourceReportId、SourceSubmissionVersion、SourceCurrentVersion，不伪造本期报表 ID。两类都含名称、性质、行业、人数与净变化；无减员时省略所有减员原因元素。XML 禁用 DTD 与外部实体。正式 XSD 将与后端实现一起纳入仓库，元素名和空值规则以本契约 x-xmlContract 固定。",
+    "queue": "RabbitMQ 仅服务器本机 AMQPS/TLS，持久队列/持久消息/publisher confirms；消费者可靠落库分片后才确认消费。每片原始字节最多 1024，chunkIndex 从0连续到 chunkCount-1，均带 batchId、chunkCount、整报文与本片 SHA-256。接收端先按 (batchId,chunkIndex) 去重并持久化，再按序组字节、校验哈希/XSD/企业数与合计、写模拟回执；拼装之前不可标 MOCK_ACCEPTED。重试只读取同一冻结字节，不再取业务数据或重新序列化。brokerConfirmedCount 只代表 broker 接管消息，不能显示为国家接收。",
+    "warehouse": "V14 新增 dw_dim_period、dw_dim_region、dw_dim_enterprise、dw_dim_nature、dw_dim_industry、dw_fact_employment_month、dw_sync_run；事实唯一键 (enterprise_org_id,period_code)，只纳入当前有效省审通过且未作废的真实报表，不纳入代填。启动后和每分钟事务性同步，失败保留上一完整快照并记录错误；本轮无前端专用数仓同步或同比环比接口，既有分析五路径字段兼容。V15 在 V14 后新增 XML/队列持久表并扩展 national_batch，不改 V1—V13。",
+    "errors": "统一 code/message/data/traceId。参数/未知字段 400；未登录 401；非省级或辖区越权 403；本省不存在资源 404；业务门槛、版本、缺源、重复批次和锁定 409，data.reasonCode 明确原因。市级工作概览仍走市级路径并按令牌限制。所有时间为 UTC Z，ID 为字符串。"
+  },
+  "x-xmlContract": {
+    "mediaType": "application/xml",
+    "schemaVersion": "demo-2",
+    "root": "ProvinceReport",
+    "headerElements": [
+      "BatchId",
+      "Mode",
+      "ProvinceCode",
+      "PeriodCode",
+      "PeriodStartAt",
+      "PeriodEndExclusiveAt",
+      "GeneratedAt"
+    ],
+    "summaryElements": [
+      "EnterpriseCount",
+      "RealCount",
+      "ProxyCount",
+      "BaselineEmploymentTotal",
+      "PeriodEmploymentTotal",
+      "NetChange"
+    ],
+    "enterpriseCommonElements": [
+      "OrganizationCode",
+      "EnterpriseName",
+      "RegionCode",
+      "NatureCode",
+      "IndustryCode",
+      "BaselineEmploymentCount",
+      "PeriodEmploymentCount",
+      "NetChange"
+    ],
+    "realElements": [
+      "ReportId",
+      "SubmissionVersion",
+      "CurrentVersion",
+      "BaselineSourcePeriodCode"
+    ],
+    "proxyElements": [
+      "ProxySourcePeriodCode",
+      "SourceReportId",
+      "SourceSubmissionVersion",
+      "SourceCurrentVersion"
+    ],
+    "reductionElementsWhenReduced": [
+      "ReductionTypeCode",
+      "PrimaryReasonCode",
+      "PrimaryReasonDetail",
+      "OtherReason"
+    ],
+    "example": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<ProvinceReport schemaVersion=\"demo-2\"><Header><BatchId>YN-P202612-0001</BatchId><Mode>MOCK_QUEUE</Mode><ProvinceCode>53</ProvinceCode><PeriodCode>P202612</PeriodCode><PeriodStartAt>2026-11-30T16:00:00Z</PeriodStartAt><PeriodEndExclusiveAt>2026-12-31T16:00:00Z</PeriodEndExclusiveAt><GeneratedAt>2027-01-08T00:00:00Z</GeneratedAt></Header><Summary><EnterpriseCount>2</EnterpriseCount><RealCount>1</RealCount><ProxyCount>1</ProxyCount><BaselineEmploymentTotal>150</BaselineEmploymentTotal><PeriodEmploymentTotal>145</PeriodEmploymentTotal><NetChange>-5</NetChange></Summary><Enterprises><Enterprise reportMode=\"REAL\"><OrganizationCode>DEMO01</OrganizationCode><EnterpriseName>演示企业甲</EnterpriseName><RegionCode>530102</RegionCode><NatureCode>DEMO_NATURE_1_1</NatureCode><IndustryCode>DEMO_INDUSTRY_1_1</IndustryCode><ReportId>101</ReportId><SubmissionVersion>1</SubmissionVersion><CurrentVersion>3</CurrentVersion><BaselineSourcePeriodCode>P202611</BaselineSourcePeriodCode><BaselineEmploymentCount>100</BaselineEmploymentCount><PeriodEmploymentCount>95</PeriodEmploymentCount><NetChange>-5</NetChange><ReductionTypeCode>TYPE_ECONOMIC_LAYOFF</ReductionTypeCode><PrimaryReasonCode>REASON_INSUFFICIENT_ORDERS</PrimaryReasonCode><PrimaryReasonDetail>订单不足</PrimaryReasonDetail><OtherReason>无</OtherReason></Enterprise><Enterprise reportMode=\"PROXY\"><OrganizationCode>DEMO02</OrganizationCode><EnterpriseName>演示企业乙</EnterpriseName><RegionCode>530302</RegionCode><NatureCode>DEMO_NATURE_1_1</NatureCode><IndustryCode>DEMO_INDUSTRY_1_1</IndustryCode><ProxySourcePeriodCode>P202611</ProxySourcePeriodCode><SourceReportId>88</SourceReportId><SourceSubmissionVersion>1</SourceSubmissionVersion><SourceCurrentVersion>2</SourceCurrentVersion><BaselineEmploymentCount>50</BaselineEmploymentCount><PeriodEmploymentCount>50</PeriodEmploymentCount><NetChange>0</NetChange></Enterprise></Enterprises></ProvinceReport>"
+  },
+  "paths": {
+    "/province/periods/year/preview": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "预览某年十二个月度调查期",
+        "x-changeType": "NEW",
+        "parameters": [
+          {
+            "name": "year",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 2000,
+              "maximum": 2100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "含逐月 CREATE、EXISTING 或 CONFLICT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearPreviewEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "year": 2028,
+                    "canCreate": true,
+                    "months": [
+                      {
+                        "periodCode": "P202801",
+                        "periodLabel": "2028 年 01 月调查期",
+                        "startAt": "2027-12-31T16:00:00Z",
+                        "endExclusiveAt": "2028-01-31T16:00:00Z",
+                        "openAt": "2028-01-31T16:00:00Z",
+                        "closeAt": "2028-02-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202802",
+                        "periodLabel": "2028 年 02 月调查期",
+                        "startAt": "2028-01-31T16:00:00Z",
+                        "endExclusiveAt": "2028-02-29T16:00:00Z",
+                        "openAt": "2028-02-29T16:00:00Z",
+                        "closeAt": "2028-03-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202803",
+                        "periodLabel": "2028 年 03 月调查期",
+                        "startAt": "2028-02-29T16:00:00Z",
+                        "endExclusiveAt": "2028-03-31T16:00:00Z",
+                        "openAt": "2028-03-31T16:00:00Z",
+                        "closeAt": "2028-04-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202804",
+                        "periodLabel": "2028 年 04 月调查期",
+                        "startAt": "2028-03-31T16:00:00Z",
+                        "endExclusiveAt": "2028-04-30T16:00:00Z",
+                        "openAt": "2028-04-30T16:00:00Z",
+                        "closeAt": "2028-05-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202805",
+                        "periodLabel": "2028 年 05 月调查期",
+                        "startAt": "2028-04-30T16:00:00Z",
+                        "endExclusiveAt": "2028-05-31T16:00:00Z",
+                        "openAt": "2028-05-31T16:00:00Z",
+                        "closeAt": "2028-06-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202806",
+                        "periodLabel": "2028 年 06 月调查期",
+                        "startAt": "2028-05-31T16:00:00Z",
+                        "endExclusiveAt": "2028-06-30T16:00:00Z",
+                        "openAt": "2028-06-30T16:00:00Z",
+                        "closeAt": "2028-07-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202807",
+                        "periodLabel": "2028 年 07 月调查期",
+                        "startAt": "2028-06-30T16:00:00Z",
+                        "endExclusiveAt": "2028-07-31T16:00:00Z",
+                        "openAt": "2028-07-31T16:00:00Z",
+                        "closeAt": "2028-08-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202808",
+                        "periodLabel": "2028 年 08 月调查期",
+                        "startAt": "2028-07-31T16:00:00Z",
+                        "endExclusiveAt": "2028-08-31T16:00:00Z",
+                        "openAt": "2028-08-31T16:00:00Z",
+                        "closeAt": "2028-09-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202809",
+                        "periodLabel": "2028 年 09 月调查期",
+                        "startAt": "2028-08-31T16:00:00Z",
+                        "endExclusiveAt": "2028-09-30T16:00:00Z",
+                        "openAt": "2028-09-30T16:00:00Z",
+                        "closeAt": "2028-10-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202810",
+                        "periodLabel": "2028 年 10 月调查期",
+                        "startAt": "2028-09-30T16:00:00Z",
+                        "endExclusiveAt": "2028-10-31T16:00:00Z",
+                        "openAt": "2028-10-31T16:00:00Z",
+                        "closeAt": "2028-11-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202811",
+                        "periodLabel": "2028 年 11 月调查期",
+                        "startAt": "2028-10-31T16:00:00Z",
+                        "endExclusiveAt": "2028-11-30T16:00:00Z",
+                        "openAt": "2028-11-30T16:00:00Z",
+                        "closeAt": "2028-12-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202812",
+                        "periodLabel": "2028 年 12 月调查期",
+                        "startAt": "2028-11-30T16:00:00Z",
+                        "endExclusiveAt": "2028-12-31T16:00:00Z",
+                        "openAt": "2028-12-31T16:00:00Z",
+                        "closeAt": "2029-01-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      }
+                    ],
+                    "createdCount": 12,
+                    "existingCount": 0,
+                    "conflictCount": 0
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/periods/year": {
+      "post": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "原子创建或复用全年 12 个月度调查期",
+        "x-changeType": "NEW",
+        "description": "省份由令牌确定。相同代码且全部边界一致视为 existing；任何一个月冲突则事务回滚。保留原单期创建接口。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/YearRequest"
+              },
+              "example": {
+                "year": 2028
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "创建和复用数量之和固定为12",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YearCreateEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "traceId": "example-trace",
+                  "data": {
+                    "year": 2028,
+                    "created": [
+                      {
+                        "periodCode": "P202801",
+                        "periodLabel": "2028 年 01 月调查期",
+                        "startAt": "2027-12-31T16:00:00Z",
+                        "endExclusiveAt": "2028-01-31T16:00:00Z",
+                        "openAt": "2028-01-31T16:00:00Z",
+                        "closeAt": "2028-02-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202802",
+                        "periodLabel": "2028 年 02 月调查期",
+                        "startAt": "2028-01-31T16:00:00Z",
+                        "endExclusiveAt": "2028-02-29T16:00:00Z",
+                        "openAt": "2028-02-29T16:00:00Z",
+                        "closeAt": "2028-03-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202803",
+                        "periodLabel": "2028 年 03 月调查期",
+                        "startAt": "2028-02-29T16:00:00Z",
+                        "endExclusiveAt": "2028-03-31T16:00:00Z",
+                        "openAt": "2028-03-31T16:00:00Z",
+                        "closeAt": "2028-04-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202804",
+                        "periodLabel": "2028 年 04 月调查期",
+                        "startAt": "2028-03-31T16:00:00Z",
+                        "endExclusiveAt": "2028-04-30T16:00:00Z",
+                        "openAt": "2028-04-30T16:00:00Z",
+                        "closeAt": "2028-05-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202805",
+                        "periodLabel": "2028 年 05 月调查期",
+                        "startAt": "2028-04-30T16:00:00Z",
+                        "endExclusiveAt": "2028-05-31T16:00:00Z",
+                        "openAt": "2028-05-31T16:00:00Z",
+                        "closeAt": "2028-06-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202806",
+                        "periodLabel": "2028 年 06 月调查期",
+                        "startAt": "2028-05-31T16:00:00Z",
+                        "endExclusiveAt": "2028-06-30T16:00:00Z",
+                        "openAt": "2028-06-30T16:00:00Z",
+                        "closeAt": "2028-07-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202807",
+                        "periodLabel": "2028 年 07 月调查期",
+                        "startAt": "2028-06-30T16:00:00Z",
+                        "endExclusiveAt": "2028-07-31T16:00:00Z",
+                        "openAt": "2028-07-31T16:00:00Z",
+                        "closeAt": "2028-08-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202808",
+                        "periodLabel": "2028 年 08 月调查期",
+                        "startAt": "2028-07-31T16:00:00Z",
+                        "endExclusiveAt": "2028-08-31T16:00:00Z",
+                        "openAt": "2028-08-31T16:00:00Z",
+                        "closeAt": "2028-09-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202809",
+                        "periodLabel": "2028 年 09 月调查期",
+                        "startAt": "2028-08-31T16:00:00Z",
+                        "endExclusiveAt": "2028-09-30T16:00:00Z",
+                        "openAt": "2028-09-30T16:00:00Z",
+                        "closeAt": "2028-10-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202810",
+                        "periodLabel": "2028 年 10 月调查期",
+                        "startAt": "2028-09-30T16:00:00Z",
+                        "endExclusiveAt": "2028-10-31T16:00:00Z",
+                        "openAt": "2028-10-31T16:00:00Z",
+                        "closeAt": "2028-11-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202811",
+                        "periodLabel": "2028 年 11 月调查期",
+                        "startAt": "2028-10-31T16:00:00Z",
+                        "endExclusiveAt": "2028-11-30T16:00:00Z",
+                        "openAt": "2028-11-30T16:00:00Z",
+                        "closeAt": "2028-12-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      },
+                      {
+                        "periodCode": "P202812",
+                        "periodLabel": "2028 年 12 月调查期",
+                        "startAt": "2028-11-30T16:00:00Z",
+                        "endExclusiveAt": "2028-12-31T16:00:00Z",
+                        "openAt": "2028-12-31T16:00:00Z",
+                        "closeAt": "2029-01-07T16:00:00Z",
+                        "disposition": "CREATE",
+                        "conflictReason": null
+                      }
+                    ],
+                    "existing": [],
+                    "total": 12
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "任一月份代码或统计范围冲突，整年不写入；data.conflictMonths 给出冲突行",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/work-overview": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "省级首页按市显示真实已报、代填与未覆盖进度",
+        "x-changeType": "MODIFIED",
+        "description": "旧 cityProgress.items.submittedEnterpriseCount 保持“已转省级”语义；新进度条只读 realSubmittedCount / eligibleEnterpriseCount。provinceTotals 汇总所有市。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvinceOverviewDelta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/city/work-overview": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "市级首页增加应报分母与同口径进度",
+        "x-changeType": "MODIFIED",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CityOverviewDelta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/enterprise/work-overview": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "企业首页增加四态摘要",
+        "x-changeType": "MODIFIED",
+        "description": "首页展示 homeState，旧 currentStep 仅兼容原调用，不驱动六步图。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnterpriseOverviewDelta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/enterprise-progress": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "按城市下钻企业双状态和代填覆盖情况",
+        "x-changeType": "MODIFIED",
+        "description": "cityCode 为现有 6 位州市地区代码；不传则本省全部。省级可按市筛选，市级仍通过原市级权限入口访问本辖区。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "cityCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^53[0-9]{4}$"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProgressDelta"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/national/periods/{periodCode}/readiness": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "查看 V2 门槛、真实与代填覆盖及来源",
+        "x-changeType": "MODIFIED",
+        "description": "V2 必须覆盖全部应报企业，不再返回 requiresMissingAcknowledgement，缺报知晓不能放行。旧 V1 批次标在 existingBatch 且阻止建 V2。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/national/periods/{periodCode}/proxy-fill": {
+      "post": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "原子生成或刷新未冻结的代填",
+        "x-changeType": "NEW",
+        "description": "空对象 {} 也可提交；expectedVersion 为可选的 readiness.proxyVersion。不传企业 ID，后端按全量缺报集合生成；重复调用以当前真实来源原子替换未冻结代填。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProxyRequest"
+              },
+              "example": {
+                "expectedVersion": 0
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "逐企业返回真实历史来源",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyFillEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "未关窗、待审/退回、批次已建、版本冲突或任一缺报企业无真实历史来源；无来源时 reasonCode=NO_REAL_SOURCE，data.enterpriseOrgIds 列出企业且本次零写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "撤销本期全部尚未冻结代填",
+        "x-changeType": "NEW",
+        "description": "不带请求正文。expectedVersion 可选；撤销后 proxyVersion 增加，页面刷新 readiness。",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Z0-9_]{1,32}$"
+            }
+          },
+          {
+            "name": "expectedVersion",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyDeleteEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已建批次或版本冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/national/batches": {
+      "post": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "确认并冻结唯一 V2 XML 批次",
+        "x-changeType": "MODIFIED",
+        "description": "只接受 periodCode 和 schemaVersion=demo-2；acknowledgeMissing 为未知字段，返回 400。已有 V1 批次不能覆盖，也不能再创建 V1 批次。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBatchRequest"
+              },
+              "example": {
+                "periodCode": "P202612",
+                "schemaVersion": "demo-2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "冻结完成、异步消息投递已排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "缺报未补齐、待审/退回、重复批次或其他门槛未满足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "本省批次历史同时展示 V1 JSON 与 V2 XML",
+        "x-changeType": "MODIFIED",
+        "parameters": [
+          {
+            "name": "periodCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/BatchStatus"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchListEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/national/batches/{batchId}": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "查看冻结报文、分片进度、尝试和模拟回执",
+        "x-changeType": "MODIFIED",
+        "description": "V1 保留 payload JSON，V2 返回 payloadXml、chunkProgress；客户端不得重算或改写冻结内容。",
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDetailEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/national/batches/{batchId}/retry": {
+      "post": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "按原冻结字节和分片规则重试 V2 批次",
+        "x-changeType": "MODIFIED",
+        "description": "请求无正文。不重新取报表或代填；重复分片由模拟消费者去重。",
+        "parameters": [
+          {
+            "name": "batchId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "原批次重新排队",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "仅 V2 QUEUED 或 SEND_FAILED 可继续发送；V1 旧批次只读",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/reports/{reportId}/corrections": {
+      "post": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "入批真实报表继续禁止省级修订",
+        "x-changeType": "MODIFIED",
+        "description": "只新增 V2 锁定检查，原参数不变。",
+        "responses": {
+          "200": {
+            "description": "成功请求和响应沿用第五周契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已入 V1/V2 冻结批次返回 LOCKED_BY_NATIONAL_BATCH",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/reports/{reportId}/void": {
+      "post": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "入批真实报表继续禁止作废",
+        "x-changeType": "MODIFIED",
+        "description": "只新增 V2 锁定检查，原参数不变。",
+        "responses": {
+          "200": {
+            "description": "成功请求和响应沿用第五周契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "已入 V1/V2 冻结批次返回 LOCKED_BY_NATIONAL_BATCH",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/analysis/cities": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "分析接口切换至数仓事实表，响应兼容",
+        "x-changeType": "BEHAVIOR_MODIFIED",
+        "description": "参数、权限、响应 JSON 字段沿用《老师反馈功能修订前后端接口约定》；统计取数改为 dw_fact_employment_month 中当前有效真实报表的同步快照。代填不入数仓；不新增同比环比接口。",
+        "responses": {
+          "200": {
+            "description": "旧接口 200 响应结构不变，沿用《老师反馈功能修订前后端接口约定.openapi.json》对应 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/analysis/compare": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "分析接口切换至数仓事实表，响应兼容",
+        "x-changeType": "BEHAVIOR_MODIFIED",
+        "description": "参数、权限、响应 JSON 字段沿用《老师反馈功能修订前后端接口约定》；统计取数改为 dw_fact_employment_month 中当前有效真实报表的同步快照。代填不入数仓；不新增同比环比接口。",
+        "responses": {
+          "200": {
+            "description": "旧接口 200 响应结构不变，沿用《老师反馈功能修订前后端接口约定.openapi.json》对应 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/analysis/trend": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "分析接口切换至数仓事实表，响应兼容",
+        "x-changeType": "BEHAVIOR_MODIFIED",
+        "description": "参数、权限、响应 JSON 字段沿用《老师反馈功能修订前后端接口约定》；统计取数改为 dw_fact_employment_month 中当前有效真实报表的同步快照。代填不入数仓；不新增同比环比接口。",
+        "responses": {
+          "200": {
+            "description": "旧接口 200 响应结构不变，沿用《老师反馈功能修订前后端接口约定.openapi.json》对应 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/analysis/breakdown": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "分析接口切换至数仓事实表，响应兼容",
+        "x-changeType": "BEHAVIOR_MODIFIED",
+        "description": "参数、权限、响应 JSON 字段沿用《老师反馈功能修订前后端接口约定》；统计取数改为 dw_fact_employment_month 中当前有效真实报表的同步快照。代填不入数仓；不新增同比环比接口。",
+        "responses": {
+          "200": {
+            "description": "旧接口 200 响应结构不变，沿用《老师反馈功能修订前后端接口约定.openapi.json》对应 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/province/analysis/enterprises": {
+      "get": {
+        "tags": [
+          "中期汇报 V2"
+        ],
+        "summary": "分析接口切换至数仓事实表，响应兼容",
+        "x-changeType": "BEHAVIOR_MODIFIED",
+        "description": "参数、权限、响应 JSON 字段沿用《老师反馈功能修订前后端接口约定》；统计取数改为 dw_fact_employment_month 中当前有效真实报表的同步快照。代填不入数仓；不新增同比环比接口。",
+        "responses": {
+          "200": {
+            "description": "旧接口 200 响应结构不变，沿用《老师反馈功能修订前后端接口约定.openapi.json》对应 schema",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数或字段不合法",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录或令牌过期",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "角色或辖区无权访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "本省资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "ErrorData": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "NOT_READY",
+              "NO_REAL_SOURCE",
+              "VERSION_CONFLICT",
+              "PROXY_SOURCE_CHANGED",
+              "BATCH_EXISTS",
+              "V1_READ_ONLY",
+              "RETRY_NOT_ALLOWED",
+              "LOCKED_BY_NATIONAL_BATCH",
+              "PAYLOAD_INVALID",
+              "YEAR_CONFLICT"
+            ]
+          },
+          "fieldErrors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Blocker"
+            }
+          },
+          "conflictMonths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/YearMonth"
+            }
+          },
+          "existingBatchId": {
+            "type": "string"
+          },
+          "enterpriseOrgIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "Blocker": {
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "LEGACY_PERIOD",
+              "WINDOW_NOT_CLOSED",
+              "PENDING_CITY",
+              "PENDING_PROVINCE",
+              "RETURNED_CITY",
+              "RETURNED_PROVINCE",
+              "NO_ELIGIBLE_ENTERPRISE",
+              "UNCOVERED_ENTERPRISE",
+              "NO_REAL_SOURCE",
+              "BATCH_EXISTS"
+            ]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "YearRequest": {
+        "type": "object",
+        "required": [
+          "year"
+        ],
+        "properties": {
+          "year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100
+          }
+        },
+        "additionalProperties": false
+      },
+      "YearMonth": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "periodLabel",
+          "startAt",
+          "endExclusiveAt",
+          "openAt",
+          "closeAt",
+          "disposition",
+          "conflictReason"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "endExclusiveAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "openAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "closeAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "CREATE",
+              "EXISTING",
+              "CONFLICT"
+            ]
+          },
+          "conflictReason": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "CODE_BOUNDARY_MISMATCH",
+                  "OVERLAPPING_PERIOD"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "YearPreview": {
+        "type": "object",
+        "required": [
+          "year",
+          "canCreate",
+          "months",
+          "createdCount",
+          "existingCount",
+          "conflictCount"
+        ],
+        "properties": {
+          "year": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "canCreate": {
+            "type": "boolean"
+          },
+          "months": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/YearMonth"
+            },
+            "minItems": 12,
+            "maxItems": 12
+          },
+          "createdCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "existingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "conflictCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "YearCreateResult": {
+        "type": "object",
+        "required": [
+          "year",
+          "created",
+          "existing",
+          "total"
+        ],
+        "properties": {
+          "year": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "created": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/YearMonth"
+            }
+          },
+          "existing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/YearMonth"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "const": 12
+          }
+        },
+        "additionalProperties": false
+      },
+      "Coverage": {
+        "type": "object",
+        "required": [
+          "eligibleEnterpriseCount",
+          "realSubmittedCount",
+          "proxyCount",
+          "notCoveredCount",
+          "pendingCount",
+          "returnedCount"
+        ],
+        "properties": {
+          "eligibleEnterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realSubmittedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notCoveredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pendingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "returnedCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CityCoverage": {
+        "type": "object",
+        "required": [
+          "cityCode",
+          "cityName",
+          "eligibleEnterpriseCount",
+          "submittedEnterpriseCount",
+          "notSubmittedEnterpriseCount",
+          "realSubmittedCount",
+          "proxyCount",
+          "notCoveredCount",
+          "pendingCount",
+          "returnedCount"
+        ],
+        "properties": {
+          "cityCode": {
+            "type": "string",
+            "description": "沿用现有 6 位州市地区代码"
+          },
+          "cityName": {
+            "type": "string"
+          },
+          "eligibleEnterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "submittedEnterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notSubmittedEnterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realSubmittedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notCoveredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pendingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "returnedCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "HomeState": {
+        "type": "string",
+        "enum": [
+          "NOT_SAVED",
+          "DRAFT_SAVED",
+          "SUBMITTED",
+          "RETURNED"
+        ]
+      },
+      "ProgressCoverage": {
+        "type": "string",
+        "enum": [
+          "REAL",
+          "PROXY",
+          "NONE"
+        ]
+      },
+      "ProxySource": {
+        "type": "object",
+        "required": [
+          "sourcePeriodCode",
+          "sourceReportId",
+          "sourceSubmissionVersion",
+          "sourceCurrentVersion",
+          "periodEmploymentCount"
+        ],
+        "properties": {
+          "sourcePeriodCode": {
+            "type": "string"
+          },
+          "sourceReportId": {
+            "type": "string"
+          },
+          "sourceSubmissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sourceCurrentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProxyItem": {
+        "type": "object",
+        "required": [
+          "enterpriseOrgId",
+          "enterpriseName",
+          "organizationCode",
+          "cityCode",
+          "regionCode",
+          "proxySourcePeriodCode",
+          "sourceReportId",
+          "sourceSubmissionVersion",
+          "sourceCurrentVersion",
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "netChange",
+          "generatedAt"
+        ],
+        "properties": {
+          "enterpriseOrgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "cityCode": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "proxySourcePeriodCode": {
+            "type": "string"
+          },
+          "sourceReportId": {
+            "type": "string"
+          },
+          "sourceSubmissionVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "sourceCurrentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "baselineEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "netChange": {
+            "type": "integer",
+            "const": 0
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          }
+        },
+        "additionalProperties": false
+      },
+      "Fillable": {
+        "type": "object",
+        "required": [
+          "enterpriseOrgId",
+          "enterpriseName",
+          "cityCode",
+          "regionCode",
+          "source"
+        ],
+        "properties": {
+          "enterpriseOrgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "cityCode": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ProxySource"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NoSource": {
+        "type": "object",
+        "required": [
+          "enterpriseOrgId",
+          "enterpriseName",
+          "cityCode",
+          "regionCode",
+          "reason"
+        ],
+        "properties": {
+          "enterpriseOrgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "cityCode": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "NO_PREVIOUS_APPROVED_REAL_REPORT"
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "RealItem": {
+        "type": "object",
+        "required": [
+          "enterpriseOrgId",
+          "enterpriseName",
+          "reportId",
+          "regionCode",
+          "baselineEmploymentCount",
+          "periodEmploymentCount",
+          "netChange"
+        ],
+        "properties": {
+          "enterpriseOrgId": {
+            "type": "string"
+          },
+          "enterpriseName": {
+            "type": "string"
+          },
+          "reportId": {
+            "type": "string"
+          },
+          "regionCode": {
+            "type": "string"
+          },
+          "baselineEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "periodEmploymentCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "netChange": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NationalTotals": {
+        "type": "object",
+        "required": [
+          "enterpriseCount",
+          "realCount",
+          "proxyCount",
+          "baselineEmploymentTotal",
+          "periodEmploymentTotal",
+          "netChange"
+        ],
+        "properties": {
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "baselineEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "periodEmploymentTotal": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "netChange": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NationalPeriod": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "periodLabel",
+          "startAt",
+          "endExclusiveAt",
+          "closeAt",
+          "windowStatus",
+          "legacy"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "periodLabel": {
+            "type": "string"
+          },
+          "startAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "endExclusiveAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "closeAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "windowStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_OPEN",
+              "OPEN",
+              "CLOSED",
+              "UNAVAILABLE"
+            ]
+          },
+          "legacy": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ExistingBatch": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "status",
+          "payloadFormat"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BatchStatus"
+          },
+          "payloadFormat": {
+            "$ref": "#/components/schemas/PayloadFormat"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NationalCounts": {
+        "type": "object",
+        "required": [
+          "eligibleCount",
+          "realCount",
+          "proxyCount",
+          "missingCount",
+          "fillableCount",
+          "noSourceCount",
+          "pendingCityCount",
+          "pendingProvinceCount",
+          "returnedCityCount",
+          "returnedProvinceCount",
+          "voidedCount"
+        ],
+        "properties": {
+          "eligibleCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "missingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fillableCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "noSourceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pendingCityCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pendingProvinceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "returnedCityCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "returnedProvinceCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "voidedCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "Readiness": {
+        "type": "object",
+        "required": [
+          "period",
+          "canSubmit",
+          "blockers",
+          "counts",
+          "proxyVersion",
+          "realEnterprises",
+          "proxyItems",
+          "fillable",
+          "noRealSource",
+          "previewSummary",
+          "existingBatch"
+        ],
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/NationalPeriod"
+          },
+          "canSubmit": {
+            "type": "boolean"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Blocker"
+            }
+          },
+          "counts": {
+            "$ref": "#/components/schemas/NationalCounts"
+          },
+          "proxyVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realEnterprises": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RealItem"
+            }
+          },
+          "proxyItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProxyItem"
+            }
+          },
+          "fillable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Fillable"
+            }
+          },
+          "noRealSource": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NoSource"
+            }
+          },
+          "previewSummary": {
+            "$ref": "#/components/schemas/NationalTotals"
+          },
+          "existingBatch": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ExistingBatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProxyRequest": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProxyFillResult": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "proxyVersion",
+          "generatedCount",
+          "items",
+          "previewSummary"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "proxyVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "generatedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProxyItem"
+            }
+          },
+          "previewSummary": {
+            "$ref": "#/components/schemas/NationalTotals"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProxyDeleteResult": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "proxyVersion",
+          "removedCount"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "proxyVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "removedCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateBatchRequest": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "schemaVersion"
+        ],
+        "properties": {
+          "periodCode": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "const": "demo-2"
+          }
+        },
+        "additionalProperties": false
+      },
+      "QueueResult": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "status",
+          "mode",
+          "payloadFormat",
+          "enterpriseCount",
+          "realCount",
+          "proxyCount",
+          "detailPath"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "const": "QUEUED"
+          },
+          "mode": {
+            "type": "string",
+            "const": "MOCK_QUEUE"
+          },
+          "payloadFormat": {
+            "type": "string",
+            "const": "XML"
+          },
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "realCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "detailPath": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PayloadFormat": {
+        "type": "string",
+        "enum": [
+          "JSON",
+          "XML"
+        ]
+      },
+      "BatchStatus": {
+        "type": "string",
+        "enum": [
+          "QUEUED",
+          "SENDING",
+          "ASSEMBLING",
+          "MOCK_ACCEPTED",
+          "SEND_FAILED"
+        ]
+      },
+      "BatchSummary": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "periodCode",
+          "schemaVersion",
+          "mode",
+          "payloadFormat",
+          "status",
+          "enterpriseCount",
+          "realCount",
+          "proxyCount",
+          "payloadSha256",
+          "createdAt",
+          "lastSentAt",
+          "retryCount",
+          "lastError"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "enum": [
+              "demo-1",
+              "demo-2"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "MOCK",
+              "MOCK_QUEUE"
+            ]
+          },
+          "payloadFormat": {
+            "$ref": "#/components/schemas/PayloadFormat"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BatchStatus"
+          },
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "realCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "payloadSha256": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "lastSentAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC ISO 8601，Z 结尾"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retryCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastError": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChunkProgress": {
+        "type": "object",
+        "required": [
+          "chunkCount",
+          "brokerConfirmedCount",
+          "receiverStoredCount",
+          "assembledAt",
+          "lastError"
+        ],
+        "properties": {
+          "chunkCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "brokerConfirmedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "receiverStoredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "assembledAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC ISO 8601，Z 结尾"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastError": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "MockReceipt": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "mockReceiptId",
+          "result",
+          "receivedAt",
+          "acceptedEnterpriseCount",
+          "realCount",
+          "proxyCount",
+          "chunkCount",
+          "payloadSha256"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "mockReceiptId": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "const": "ACCEPTED"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "acceptedEnterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "chunkCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "payloadSha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SendAttempt": {
+        "type": "object",
+        "required": [
+          "attemptNo",
+          "startedAt",
+          "finishedAt",
+          "result",
+          "errorSummary",
+          "mockReceiptId"
+        ],
+        "properties": {
+          "attemptNo": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "finishedAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC ISO 8601，Z 结尾"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "SENDING",
+              "ACCEPTED",
+              "FAILED"
+            ]
+          },
+          "errorSummary": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mockReceiptId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchDetail": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "periodCode",
+          "schemaVersion",
+          "mode",
+          "payloadFormat",
+          "status",
+          "enterpriseCount",
+          "realCount",
+          "proxyCount",
+          "payloadSha256",
+          "createdAt",
+          "lastSentAt",
+          "retryCount",
+          "lastError",
+          "payload",
+          "payloadXml",
+          "chunkProgress",
+          "attempts",
+          "receipt"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "periodCode": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "type": "string",
+            "enum": [
+              "demo-1",
+              "demo-2"
+            ]
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "MOCK",
+              "MOCK_QUEUE"
+            ]
+          },
+          "payloadFormat": {
+            "$ref": "#/components/schemas/PayloadFormat"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BatchStatus"
+          },
+          "enterpriseCount": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "realCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "payloadSha256": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC ISO 8601，Z 结尾"
+          },
+          "lastSentAt": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "description": "UTC ISO 8601，Z 结尾"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "retryCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastError": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payload": {
+            "oneOf": [
+              {
+                "type": "object",
+                "description": "仅 V1 返回既有冻结 JSON 对象"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "payloadXml": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "仅 V2 返回冻结 UTF-8 XML 字符串"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chunkProgress": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ChunkProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SendAttempt"
+            }
+          },
+          "receipt": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MockReceipt"
+              },
+              {
+                "$ref": "#/components/schemas/LegacyMockReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchList": {
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "size"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BatchSummary"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      },
+      "YearPreviewEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/YearPreview"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "YearCreateEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/YearCreateResult"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReadinessEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Readiness"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProxyFillEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProxyFillResult"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProxyDeleteEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProxyDeleteResult"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "QueueEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/QueueResult"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchDetailEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/BatchDetail"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "BatchListEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/BatchList"
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "BAD_REQUEST",
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ErrorData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "traceId": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProvinceOverviewDelta": {
+        "type": "object",
+        "required": [
+          "cityProgress",
+          "provinceTotals"
+        ],
+        "properties": {
+          "cityProgress": {
+            "type": "object",
+            "required": [
+              "items"
+            ],
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CityCoverage"
+                }
+              }
+            },
+            "additionalProperties": true
+          },
+          "provinceTotals": {
+            "$ref": "#/components/schemas/Coverage"
+          }
+        },
+        "additionalProperties": true,
+        "description": "本文件只定义新增字段；旧 selectedPeriod、pendingFilingCount、pendingReportCount、approvedReportCount、entries、nationalReportCard 等字段与旧契约完全兼容。"
+      },
+      "CityOverviewDelta": {
+        "type": "object",
+        "required": [
+          "eligibleEnterpriseCount",
+          "realSubmittedCount",
+          "proxyCount",
+          "notCoveredCount",
+          "pendingCount",
+          "returnedCount"
+        ],
+        "properties": {
+          "eligibleEnterpriseCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "realSubmittedCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "proxyCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "notCoveredCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pendingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "returnedCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": true,
+        "description": "旧 selectedPeriod、reportCounts、noticeEntry、nextAction 保留。"
+      },
+      "EnterpriseOverviewDelta": {
+        "type": "object",
+        "required": [
+          "homeState",
+          "homePeriod",
+          "homeReturnReason",
+          "homeNextAction"
+        ],
+        "properties": {
+          "homeState": {
+            "$ref": "#/components/schemas/HomeState"
+          },
+          "homePeriod": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "periodCode": {
+                    "type": "string"
+                  },
+                  "periodLabel": {
+                    "type": "string"
+                  },
+                  "deadlineAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "windowStatus": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "homeReturnReason": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "homeNextAction": {
+            "type": "object",
+            "required": [
+              "label",
+              "route",
+              "enabled"
+            ],
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "route": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": true,
+        "description": "旧 filingStatus、reportStatus、selectedPeriod、latestReturnReason、currentStep、nextAction 等保持兼容；前端首页只使用 home* 四态摘要。"
+      },
+      "ProgressRowDelta": {
+        "type": "object",
+        "required": [
+          "enterpriseOrgId",
+          "enterpriseName",
+          "cityCode",
+          "cityName",
+          "filingStatus",
+          "reportStatus",
+          "reportId",
+          "reportVoided",
+          "lastSubmittedAt",
+          "eligible",
+          "coverageMode",
+          "proxySource"
+        ],
+        "properties": {
+          "eligible": {
+            "type": "boolean"
+          },
+          "coverageMode": {
+            "$ref": "#/components/schemas/ProgressCoverage"
+          },
+          "proxySource": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ProxySource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "description": "旧双状态字段保持原样；代填不伪造 reportStatus 或 reportId。"
+      },
+      "ProgressDelta": {
+        "type": "object",
+        "required": [
+          "periodCode",
+          "summary",
+          "items",
+          "total",
+          "page",
+          "size",
+          "coverageSummary"
+        ],
+        "properties": {
+          "coverageSummary": {
+            "$ref": "#/components/schemas/Coverage"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgressRowDelta"
+            }
+          }
+        },
+        "additionalProperties": true,
+        "description": "原分页、筛选和双状态汇总保持兼容。"
+      },
+      "LegacyMockReceipt": {
+        "type": "object",
+        "required": [
+          "batchId",
+          "mockReceiptId",
+          "result",
+          "receivedAt",
+          "acceptedEnterpriseCount",
+          "payloadSha256"
+        ],
+        "properties": {
+          "batchId": {
+            "type": "string"
+          },
+          "mockReceiptId": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string",
+            "const": "ACCEPTED"
+          },
+          "receivedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acceptedEnterpriseCount": {
+            "type": "integer"
+          },
+          "payloadSha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}
