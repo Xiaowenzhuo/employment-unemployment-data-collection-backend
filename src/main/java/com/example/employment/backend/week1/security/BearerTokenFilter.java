@@ -44,14 +44,16 @@ public class BearerTokenFilter extends OncePerRequestFilter {
             return;
         }
         UserAccount account;
+        long tokenVersion;
         try {
-            long userId = tokens.userId(header.substring(7));
-            account = users.findById(userId).orElse(null);
+            var identity = tokens.identity(header.substring(7));
+            account = users.findById(identity.userId()).orElse(null);
+            tokenVersion = identity.authVersion();
         } catch (JwtException | IllegalArgumentException exception) {
             errors.write(response, 401, "UNAUTHORIZED", "未登录或登录已过期");
             return;
         }
-        if (account == null || !account.canLogin()) {
+        if (account == null || !account.canLogin() || account.authVersion() != tokenVersion) {
             errors.write(response, 401, "UNAUTHORIZED", "未登录或登录已过期");
             return;
         }

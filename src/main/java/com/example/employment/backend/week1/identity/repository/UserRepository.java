@@ -25,6 +25,7 @@ public class UserRepository {
     private UserAccount toAccount(UserRow row) {
         return new UserAccount(row.id(), row.orgId(), row.username(), row.passwordHash(),
                 row.displayName(), row.enabled(), row.orgName(), row.orgEnabled(),
-                dao.roleCodes(row.id()));
+                dao.roleCodes(row.id()), dao.functionalRoles(row.id()),
+                dao.permissions(row.id()), row.authVersion(), row.deleted());
     }
 }

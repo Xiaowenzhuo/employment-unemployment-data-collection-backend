@@ -48,6 +48,13 @@ public class AccountDao {
         if (assigned != 1) {
             throw new IllegalStateException("Enterprise role is missing");
         }
+        int functionalAssigned = jdbc.update("""
+                INSERT INTO user_role (user_id, role_id)
+                SELECT ?, id FROM `role` WHERE code = 'ENTERPRISE_DEFAULT'
+                """, userId);
+        if (functionalAssigned != 1) {
+            throw new IllegalStateException("Enterprise default functional role is missing");
+        }
     }
 
     public void audit(long actorId, long orgId, LocalDateTime now) {

@@ -32,10 +32,11 @@ public class TokenService {
         decoder = NimbusJwtDecoder.withSecretKey(key).macAlgorithm(MacAlgorithm.HS256).build();
     }
 
-    public String issue(long userId) {
+    public String issue(long userId, long authVersion) {
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .subject(Long.toString(userId))
+                .claim("authVersion", authVersion)
                 .issuedAt(now)
                 .expiresAt(now.plusSeconds(TTL_SECONDS))
                 .build();
@@ -43,7 +44,17 @@ public class TokenService {
         return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
     }
 
-    public long userId(String token) {
-        return Long.parseLong(decoder.decode(token).getSubject());
+    public String issue(long userId) {
+        return issue(userId, 0);
+    }
+
+    public TokenIdentity identity(String token) {
+        var jwt = decoder.decode(token);
+        Number version = jwt.getClaim("authVersion");
+        return new TokenIdentity(Long.parseLong(jwt.getSubject()),
+                version == null ? 0 : version.longValue());
+    }
+
+    public record TokenIdentity(long userId, long authVersion) {
     }
 }

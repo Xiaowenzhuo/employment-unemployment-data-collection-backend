@@ -182,6 +182,7 @@ class WeekFourHttpIntegrationTests {
                 VALUES (?,?,?,?,?,true,CURRENT_TIMESTAMP)
                 """, id, org, name, passwords.encode("testPass123"), name);
         jdbc.update("INSERT INTO user_role VALUES (?,?)", id, role);
+        jdbc.update("INSERT INTO user_role VALUES (?,?)", id, 7 - role);
     }
 
     private String form(int version, int count) throws Exception {

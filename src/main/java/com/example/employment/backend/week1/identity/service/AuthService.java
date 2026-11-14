@@ -26,7 +26,7 @@ public class AuthService {
         if (!account.canLogin() || !passwords.matches(password, account.passwordHash())) {
             throw new InvalidCredentialsException();
         }
-        return new LoginResult(tokens.issue(account.id()), TokenService.TTL_SECONDS,
+        return new LoginResult(tokens.issue(account.id(), account.authVersion()), TokenService.TTL_SECONDS,
                 UserSummary.from(account));
     }
 

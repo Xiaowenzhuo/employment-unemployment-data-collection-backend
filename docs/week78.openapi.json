@@ -1,0 +1,4117 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "云南省企业就业失业数据采集系统 第七八周前后端接口约定",
+    "version": "week7-8-contract-2026-11-14",
+    "description": "依据《第七八周剩余功能与项目收尾总计划_确定版.md》制定的开发前契约。本文只定义本轮新增用户、角色、监控接口，以及 /auth/me 和旧省级企业建号的变更；旧接口的请求响应继续遵循 W1—W6、老师反馈修订、国家 V1 和中期 V2 契约。新增接口已于 2026-11-14 部署至共享服务器，Flyway V16 和本机公网联调通过。第八周主要是回归验收，不新增业务 API。"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "x-contractStatus": "已于 2026-11-14 部署验证；服务器 Flyway V16",
+  "x-changeSummary": {
+    "NEW": [
+      "GET /province/admin/organizations",
+      "GET /province/admin/users",
+      "POST /province/admin/users",
+      "GET /province/admin/users/{id}",
+      "PUT /province/admin/users/{id}",
+      "DELETE /province/admin/users/{id}",
+      "PUT /province/admin/users/{id}/status",
+      "POST /province/admin/users/{id}/reset-password",
+      "GET /province/admin/permissions",
+      "GET /province/admin/roles",
+      "POST /province/admin/roles",
+      "GET /province/admin/roles/{id}",
+      "PUT /province/admin/roles/{id}",
+      "POST /province/admin/roles/{id}/replace-and-delete",
+      "GET /province/admin/monitor"
+    ],
+    "MODIFIED": [
+      "GET /auth/me",
+      "POST /province/enterprise-accounts"
+    ],
+    "AUTHORIZATION_MODIFIED": "x-permissionMatrix 中除 PUBLIC/AUTHENTICATED 公共读接口外，全部既有业务接口增加身份、功能权限及原有组织范围联合校验。",
+    "UNCHANGED": "其他旧接口的路径、请求体和成功响应字段沿用既有契约。"
+  },
+  "x-fixedDecisions": {
+    "scope": "省份和组织辖区只从登录令牌及数据库组织树推导，不接受浏览器自报。跨省 ID 与不存在 ID 均返回 404；市级或企业级调用 /province/admin/** 返回 403。",
+    "identity": "每个账号恰有一个 PROVINCE/CITY/ENTERPRISE 身份角色，功能角色可多选且只能同级。登录判定只数身份角色；/auth/me 的 roleCode 始终为身份角色，权限为功能角色权限并集。功能权限不替代旧有组织范围校验。",
+    "migration": "现有省、市、企业账号分别获得 PROVINCE_DEFAULT、CITY_DEFAULT、ENTERPRISE_DEFAULT；三个系统默认角色包含本层级目录的全部权限，不能修改或删除。旧省级创建企业组织账号接口为新账号自动授予 ENTERPRISE_DEFAULT。",
+    "userCreate": "新用户只能加入本省已有且启用的组织；组织类型自动决定身份角色。username 去首尾空白后 1—64 字且全局唯一，逻辑删除后仍不可复用；displayName 去首尾空白后 1—80 字；初始密码和重置密码均为 8—64 位可见 ASCII，至少一个字母和数字。创建时必须显式选择至少一个同级功能角色，账号默认启用、version=1。",
+    "userEdit": "用户名、组织及身份角色创建后不可改。PUT /users/{id} 为显示名和功能角色 ID 整组替换，不做局部补丁。启用账号至少一个同级功能角色。除密码重置外，角色或权限变更后的下一次请求从数据库读取最新权限，不要求重新登录；前端随后刷新 /auth/me。",
+    "userDelete": "有正式企业报表提交快照，或有企业备案审核、市级或省级报表审核记录的用户返回 409 USER_HAS_HISTORY，data.historyTypes 给出原因；允许停用。其余仅逻辑删除，审计关联保留，不能登录，普通列表不出现，用户名不复用。停用或逻辑删除后旧令牌下一次请求立即 401。",
+    "lastAdmin": "始终至少保留一个启用、未删除、组织启用的省级账号，其有效权限同时包含 PROVINCE.USER.READ/CREATE/UPDATE/STATUS/RESET_PASSWORD/DELETE 和 PROVINCE.ROLE.READ/CREATE/UPDATE/DELETE。停用、删除、替换用户功能角色、修改角色权限和替代删除角色均在事务内检查；若导致该账号数为零，返回 409 LAST_ADMIN。",
+    "passwordReset": "重置成功只返回无密码的用户信息，并令账号 authVersion 加 1。旧 JWT 缺 authVersion 时按 0 识别；新旧令牌版本不一致立即 401。密码只存 BCrypt 哈希，不写明文日志或响应。管理员线下通知新密码。",
+    "role": "默认角色全局可见但锁定；自定义角色只归创建省份。角色名去首尾空白后 1—50 字，并在本省同层级内不区分大小写唯一。自定义角色必须有至少一项本级固定权限；权限编码只可从 x-permissionCatalog 选择，不能任意创建。删除后的自定义角色名称仍保留，不重新发放。角色更新以 name 和 permissionCodes 整组替换，默认角色修改/删除返回 409 PROTECTED_ROLE。",
+    "roleDelete": "未分配给未删除账号的自定义角色仅传 expectedVersion 即可删除，返回 affectedUserCount=0、replacementRoleId=null。已分配给未删除账号时必须传本省可见、同级且不同 ID 的替代角色；否则 409 ROLE_REPLACEMENT_REQUIRED 或 ROLE_LEVEL_MISMATCH。同一事务将全部未删除关联用户（含停用用户）换到替代角色，已拥有替代角色的用户去重，保留其他角色，受影响用户 version 加 1，再逻辑删除原角色；已删除用户的历史关联留存，不能重新使用已删除角色。若最后管理员会消失则整个事务回滚。角色列表和 assignedUserCount 排除已删除用户，包含停用用户。",
+    "version": "用户更新、启停、重置密码、删除以及角色更新、替代删除均必须传 expectedVersion；创建不传。首次 version=1，每次成功修改加 1；版本过期统一 409 VERSION_CONFLICT。删除角色时仅核对被删角色版本，替代角色须在事务中保持可用。",
+    "list": "组织和账号、角色列表默认 page=0,size=20，最大 size=100；筛选条件按交集处理，关键词去首尾空白后包含匹配。账号按 createdAt 降序、ID 降序；角色按 level 的 PROVINCE/CITY/ENTERPRISE 次序、系统默认优先、name、ID 排序。空结果返回 items=[]、total=0。已逻辑删除账号及角色不出普通列表。",
+    "errors": "统一 JSON 外壳 code/message/data/traceId。未知字段、字段格式及权限编码错误 400 BAD_REQUEST；未登录、失效令牌 401 UNAUTHORIZED；身份或功能权限不足 403 FORBIDDEN；不存在或跨省资源 404 NOT_FOUND；状态、版本、用户名或角色名冲突 409 CONFLICT，并在 data.reasonCode 填固定原因码。",
+    "monitor": "仅省级且有 PROVINCE.MONITOR.READ 可调用。每次 GET 采集当前 CPU 百分比、物理内存和运行 JAR 所在文件系统的磁盘字节数；业务后端返回当前版本、启动时间及 UP。MySQL 用实际查询、RabbitMQ 用本机连接、独立模拟接收端用本机健康探测，各项探测超时 2 秒。明确连接失败为 DOWN，探测超时或无法判定为 UNKNOWN；某项读取失败只将该项标 UNKNOWN 且数值为 null，整页 200。返回 UTC 检查时间，不含口令、连接串、证书路径或环境变量。前端每 30 秒刷新并可手动刷新。",
+    "frontendFlow": "登录后及用户本人权限变化后调用 GET /auth/me 取得 roleCode、functionalRoles、permissions；菜单和按钮按 x-permissionMatrix 对应编码显示。服务端逐请求校验，前端隐藏按钮不能代替 403。重置密码后被重置者需重新登录；列表写操作后用最新 version 刷新。监控仅调用业务后端，不直接探测 MySQL、RabbitMQ 或接收端。"
+  },
+  "x-permissionCatalog": [
+    {
+      "code": "PROVINCE.OVERVIEW.READ",
+      "name": "工作概览：查看",
+      "level": "PROVINCE",
+      "feature": "工作概览",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+      "name": "企业账号：创建企业组织和首个账号",
+      "level": "PROVINCE",
+      "feature": "企业账号",
+      "operation": "创建企业组织和首个账号"
+    },
+    {
+      "code": "PROVINCE.ACCOUNT.READ",
+      "name": "全省账号查询：查询",
+      "level": "PROVINCE",
+      "feature": "全省账号查询",
+      "operation": "查询"
+    },
+    {
+      "code": "PROVINCE.FILING.READ",
+      "name": "企业备案：查看",
+      "level": "PROVINCE",
+      "feature": "企业备案",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.FILING.APPROVE",
+      "name": "企业备案：通过",
+      "level": "PROVINCE",
+      "feature": "企业备案",
+      "operation": "通过"
+    },
+    {
+      "code": "PROVINCE.FILING.RETURN",
+      "name": "企业备案：退回",
+      "level": "PROVINCE",
+      "feature": "企业备案",
+      "operation": "退回"
+    },
+    {
+      "code": "PROVINCE.PERIOD.READ",
+      "name": "调查期：查看",
+      "level": "PROVINCE",
+      "feature": "调查期",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.PERIOD.CREATE",
+      "name": "调查期：创建",
+      "level": "PROVINCE",
+      "feature": "调查期",
+      "operation": "创建"
+    },
+    {
+      "code": "PROVINCE.PERIOD.UPDATE",
+      "name": "调查期：修改",
+      "level": "PROVINCE",
+      "feature": "调查期",
+      "operation": "修改"
+    },
+    {
+      "code": "PROVINCE.REPORT.READ",
+      "name": "省级报表：查看",
+      "level": "PROVINCE",
+      "feature": "省级报表",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.REPORT.APPROVE",
+      "name": "省级报表：通过",
+      "level": "PROVINCE",
+      "feature": "省级报表",
+      "operation": "通过"
+    },
+    {
+      "code": "PROVINCE.REPORT.RETURN",
+      "name": "省级报表：退回",
+      "level": "PROVINCE",
+      "feature": "省级报表",
+      "operation": "退回"
+    },
+    {
+      "code": "PROVINCE.DATA.READ",
+      "name": "数据管理：查询",
+      "level": "PROVINCE",
+      "feature": "数据管理",
+      "operation": "查询"
+    },
+    {
+      "code": "PROVINCE.DATA.EXPORT",
+      "name": "数据管理：导出",
+      "level": "PROVINCE",
+      "feature": "数据管理",
+      "operation": "导出"
+    },
+    {
+      "code": "PROVINCE.DATA.CORRECT",
+      "name": "数据管理：修订",
+      "level": "PROVINCE",
+      "feature": "数据管理",
+      "operation": "修订"
+    },
+    {
+      "code": "PROVINCE.DATA.VOID",
+      "name": "数据管理：作废",
+      "level": "PROVINCE",
+      "feature": "数据管理",
+      "operation": "作废"
+    },
+    {
+      "code": "PROVINCE.ANALYSIS.READ",
+      "name": "分析与数仓结果：查看",
+      "level": "PROVINCE",
+      "feature": "分析与数仓结果",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.NOTICE.READ",
+      "name": "通知：查看",
+      "level": "PROVINCE",
+      "feature": "通知",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.NOTICE.CREATE",
+      "name": "通知：发布",
+      "level": "PROVINCE",
+      "feature": "通知",
+      "operation": "发布"
+    },
+    {
+      "code": "PROVINCE.NOTICE.UPDATE",
+      "name": "通知：修改",
+      "level": "PROVINCE",
+      "feature": "通知",
+      "operation": "修改"
+    },
+    {
+      "code": "PROVINCE.NOTICE.DELETE",
+      "name": "通知：删除",
+      "level": "PROVINCE",
+      "feature": "通知",
+      "operation": "删除"
+    },
+    {
+      "code": "PROVINCE.NATIONAL.READ",
+      "name": "国家模拟接口：查看",
+      "level": "PROVINCE",
+      "feature": "国家模拟接口",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.NATIONAL.PROXY_CREATE",
+      "name": "国家模拟接口：生成代填",
+      "level": "PROVINCE",
+      "feature": "国家模拟接口",
+      "operation": "生成代填"
+    },
+    {
+      "code": "PROVINCE.NATIONAL.PROXY_DELETE",
+      "name": "国家模拟接口：撤销代填",
+      "level": "PROVINCE",
+      "feature": "国家模拟接口",
+      "operation": "撤销代填"
+    },
+    {
+      "code": "PROVINCE.NATIONAL.BATCH_CREATE",
+      "name": "国家模拟接口：确认建批",
+      "level": "PROVINCE",
+      "feature": "国家模拟接口",
+      "operation": "确认建批"
+    },
+    {
+      "code": "PROVINCE.NATIONAL.RETRY",
+      "name": "国家模拟接口：原批次重试",
+      "level": "PROVINCE",
+      "feature": "国家模拟接口",
+      "operation": "原批次重试"
+    },
+    {
+      "code": "PROVINCE.USER.READ",
+      "name": "系统用户：查看",
+      "level": "PROVINCE",
+      "feature": "系统用户",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.USER.CREATE",
+      "name": "系统用户：创建",
+      "level": "PROVINCE",
+      "feature": "系统用户",
+      "operation": "创建"
+    },
+    {
+      "code": "PROVINCE.USER.UPDATE",
+      "name": "系统用户：修改",
+      "level": "PROVINCE",
+      "feature": "系统用户",
+      "operation": "修改"
+    },
+    {
+      "code": "PROVINCE.USER.STATUS",
+      "name": "系统用户：启停",
+      "level": "PROVINCE",
+      "feature": "系统用户",
+      "operation": "启停"
+    },
+    {
+      "code": "PROVINCE.USER.RESET_PASSWORD",
+      "name": "系统用户：重置密码",
+      "level": "PROVINCE",
+      "feature": "系统用户",
+      "operation": "重置密码"
+    },
+    {
+      "code": "PROVINCE.USER.DELETE",
+      "name": "系统用户：删除",
+      "level": "PROVINCE",
+      "feature": "系统用户",
+      "operation": "删除"
+    },
+    {
+      "code": "PROVINCE.ROLE.READ",
+      "name": "功能角色：查看",
+      "level": "PROVINCE",
+      "feature": "功能角色",
+      "operation": "查看"
+    },
+    {
+      "code": "PROVINCE.ROLE.CREATE",
+      "name": "功能角色：创建",
+      "level": "PROVINCE",
+      "feature": "功能角色",
+      "operation": "创建"
+    },
+    {
+      "code": "PROVINCE.ROLE.UPDATE",
+      "name": "功能角色：修改",
+      "level": "PROVINCE",
+      "feature": "功能角色",
+      "operation": "修改"
+    },
+    {
+      "code": "PROVINCE.ROLE.DELETE",
+      "name": "功能角色：替代删除",
+      "level": "PROVINCE",
+      "feature": "功能角色",
+      "operation": "替代删除"
+    },
+    {
+      "code": "PROVINCE.MONITOR.READ",
+      "name": "系统监控：查看",
+      "level": "PROVINCE",
+      "feature": "系统监控",
+      "operation": "查看"
+    },
+    {
+      "code": "CITY.OVERVIEW.READ",
+      "name": "工作概览：查看",
+      "level": "CITY",
+      "feature": "工作概览",
+      "operation": "查看"
+    },
+    {
+      "code": "CITY.REPORT.READ",
+      "name": "本市报表：查看",
+      "level": "CITY",
+      "feature": "本市报表",
+      "operation": "查看"
+    },
+    {
+      "code": "CITY.REPORT.APPROVE",
+      "name": "本市报表：通过",
+      "level": "CITY",
+      "feature": "本市报表",
+      "operation": "通过"
+    },
+    {
+      "code": "CITY.REPORT.RETURN",
+      "name": "本市报表：退回",
+      "level": "CITY",
+      "feature": "本市报表",
+      "operation": "退回"
+    },
+    {
+      "code": "CITY.NOTICE.READ",
+      "name": "本市通知：查看",
+      "level": "CITY",
+      "feature": "本市通知",
+      "operation": "查看"
+    },
+    {
+      "code": "CITY.NOTICE.CREATE",
+      "name": "本市通知：发布",
+      "level": "CITY",
+      "feature": "本市通知",
+      "operation": "发布"
+    },
+    {
+      "code": "CITY.NOTICE.UPDATE",
+      "name": "本市通知：修改",
+      "level": "CITY",
+      "feature": "本市通知",
+      "operation": "修改"
+    },
+    {
+      "code": "CITY.NOTICE.DELETE",
+      "name": "本市通知：删除",
+      "level": "CITY",
+      "feature": "本市通知",
+      "operation": "删除"
+    },
+    {
+      "code": "ENTERPRISE.OVERVIEW.READ",
+      "name": "工作概览：查看",
+      "level": "ENTERPRISE",
+      "feature": "工作概览",
+      "operation": "查看"
+    },
+    {
+      "code": "ENTERPRISE.FILING.READ",
+      "name": "本企业备案：查看",
+      "level": "ENTERPRISE",
+      "feature": "本企业备案",
+      "operation": "查看"
+    },
+    {
+      "code": "ENTERPRISE.FILING.DRAFT_SAVE",
+      "name": "本企业备案：保存草稿",
+      "level": "ENTERPRISE",
+      "feature": "本企业备案",
+      "operation": "保存草稿"
+    },
+    {
+      "code": "ENTERPRISE.FILING.SUBMIT",
+      "name": "本企业备案：提交",
+      "level": "ENTERPRISE",
+      "feature": "本企业备案",
+      "operation": "提交"
+    },
+    {
+      "code": "ENTERPRISE.REPORT.READ",
+      "name": "本企业报表：查看历史",
+      "level": "ENTERPRISE",
+      "feature": "本企业报表",
+      "operation": "查看历史"
+    },
+    {
+      "code": "ENTERPRISE.REPORT.DRAFT_SAVE",
+      "name": "本企业报表：保存草稿",
+      "level": "ENTERPRISE",
+      "feature": "本企业报表",
+      "operation": "保存草稿"
+    },
+    {
+      "code": "ENTERPRISE.REPORT.SUBMIT",
+      "name": "本企业报表：正式提交、批量提交及退回重报",
+      "level": "ENTERPRISE",
+      "feature": "本企业报表",
+      "operation": "正式提交、批量提交及退回重报"
+    },
+    {
+      "code": "ENTERPRISE.NOTICE.READ",
+      "name": "通知：查看",
+      "level": "ENTERPRISE",
+      "feature": "通知",
+      "operation": "查看"
+    }
+  ],
+  "x-permissionMatrix": {
+    "GET /province/work-overview": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.OVERVIEW.READ",
+      "scope": "本省"
+    },
+    "GET /province/enterprise-progress": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.OVERVIEW.READ",
+      "scope": "本省"
+    },
+    "POST /province/enterprise-accounts": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+      "scope": "本省；地区须对应已有市级组织"
+    },
+    "GET /province/accounts": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ACCOUNT.READ",
+      "scope": "本省省、市、企业账号"
+    },
+    "GET /province/filings/periods": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.FILING.READ",
+      "scope": "本省企业备案"
+    },
+    "GET /province/filings": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.FILING.READ",
+      "scope": "本省企业备案"
+    },
+    "GET /province/filings/{filingId}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.FILING.READ",
+      "scope": "本省企业备案"
+    },
+    "GET /province/filings/{filingId}/versions/{version}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.FILING.READ",
+      "scope": "本省企业备案"
+    },
+    "GET /province/filings/export": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.EXPORT",
+      "scope": "本省；使用既有筛选范围"
+    },
+    "GET /province/accounts/export": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.EXPORT",
+      "scope": "本省；使用既有筛选范围"
+    },
+    "GET /province/exports/enterprise-info": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.EXPORT",
+      "scope": "本省；使用既有筛选范围"
+    },
+    "GET /province/exports/reports": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.EXPORT",
+      "scope": "本省；使用既有筛选范围"
+    },
+    "POST /province/filings/{filingId}/approve": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.FILING.APPROVE",
+      "scope": "本省待审备案"
+    },
+    "POST /province/filings/{filingId}/return": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.FILING.RETURN",
+      "scope": "本省待审备案"
+    },
+    "GET /province/periods": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.PERIOD.READ",
+      "scope": "本省调查期"
+    },
+    "GET /province/periods/year/preview": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.PERIOD.READ",
+      "scope": "本省调查期"
+    },
+    "POST /province/periods": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.PERIOD.CREATE",
+      "scope": "本省调查期"
+    },
+    "POST /province/periods/year": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.PERIOD.CREATE",
+      "scope": "本省调查期"
+    },
+    "PUT /province/periods/{code}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.PERIOD.UPDATE",
+      "scope": "本省可修改调查期"
+    },
+    "GET /province/reports": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.REPORT.READ",
+      "scope": "本省报表"
+    },
+    "GET /province/reports/{reportId}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.REPORT.READ",
+      "scope": "本省报表"
+    },
+    "POST /province/reports/{reportId}/approve": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.REPORT.APPROVE",
+      "scope": "本省待省审报表"
+    },
+    "POST /province/reports/{reportId}/return": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.REPORT.RETURN",
+      "scope": "本省待省审报表"
+    },
+    "GET /province/reports/{reportId}/corrections": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.READ",
+      "scope": "本省有效数据和追溯记录"
+    },
+    "GET /province/summaries": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.READ",
+      "scope": "本省有效数据和追溯记录"
+    },
+    "GET /province/data/reports": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.READ",
+      "scope": "本省有效数据和追溯记录"
+    },
+    "GET /province/data/enterprise-info": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.READ",
+      "scope": "本省有效数据和追溯记录"
+    },
+    "POST /province/reports/{reportId}/corrections": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.CORRECT",
+      "scope": "本省可修订报表"
+    },
+    "POST /province/reports/{reportId}/void": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.DATA.VOID",
+      "scope": "本省可作废报表"
+    },
+    "GET /province/analysis/cities": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ANALYSIS.READ",
+      "scope": "本省分析结果"
+    },
+    "GET /province/analysis/compare": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ANALYSIS.READ",
+      "scope": "本省分析结果"
+    },
+    "GET /province/analysis/trend": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ANALYSIS.READ",
+      "scope": "本省分析结果"
+    },
+    "GET /province/analysis/breakdown": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ANALYSIS.READ",
+      "scope": "本省分析结果"
+    },
+    "GET /province/analysis/enterprises": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ANALYSIS.READ",
+      "scope": "本省分析结果"
+    },
+    "POST /province/notices": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NOTICE.CREATE",
+      "scope": "本省发布"
+    },
+    "PUT /province/notices/{noticeId}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NOTICE.UPDATE",
+      "scope": "本省已发布通知"
+    },
+    "DELETE /province/notices/{noticeId}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NOTICE.DELETE",
+      "scope": "本省已发布通知"
+    },
+    "GET /province/national/periods/{periodCode}/readiness": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NATIONAL.READ",
+      "scope": "本省国家模拟接口批次与期次"
+    },
+    "GET /province/national/batches": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NATIONAL.READ",
+      "scope": "本省国家模拟接口批次与期次"
+    },
+    "GET /province/national/batches/{batchId}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NATIONAL.READ",
+      "scope": "本省国家模拟接口批次与期次"
+    },
+    "POST /province/national/periods/{periodCode}/proxy-fill": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NATIONAL.PROXY_CREATE",
+      "scope": "本省未冻结期次"
+    },
+    "DELETE /province/national/periods/{periodCode}/proxy-fill": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NATIONAL.PROXY_DELETE",
+      "scope": "本省未冻结期次"
+    },
+    "POST /province/national/batches": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NATIONAL.BATCH_CREATE",
+      "scope": "本省符合门槛期次"
+    },
+    "POST /province/national/batches/{batchId}/retry": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.NATIONAL.RETRY",
+      "scope": "本省可重试批次"
+    },
+    "GET /city/work-overview": {
+      "identity": "CITY",
+      "permission": "CITY.OVERVIEW.READ",
+      "scope": "本市"
+    },
+    "GET /city/reports": {
+      "identity": "CITY",
+      "permission": "CITY.REPORT.READ",
+      "scope": "本市报表"
+    },
+    "GET /city/reports/{reportId}": {
+      "identity": "CITY",
+      "permission": "CITY.REPORT.READ",
+      "scope": "本市报表"
+    },
+    "POST /city/reports/{reportId}/approve": {
+      "identity": "CITY",
+      "permission": "CITY.REPORT.APPROVE",
+      "scope": "本市待审报表"
+    },
+    "POST /city/reports/{reportId}/return": {
+      "identity": "CITY",
+      "permission": "CITY.REPORT.RETURN",
+      "scope": "本市待审报表"
+    },
+    "POST /city/notices": {
+      "identity": "CITY",
+      "permission": "CITY.NOTICE.CREATE",
+      "scope": "本市发布"
+    },
+    "PUT /city/notices/{noticeId}": {
+      "identity": "CITY",
+      "permission": "CITY.NOTICE.UPDATE",
+      "scope": "本市本人发布通知"
+    },
+    "DELETE /city/notices/{noticeId}": {
+      "identity": "CITY",
+      "permission": "CITY.NOTICE.DELETE",
+      "scope": "本市本人发布通知"
+    },
+    "GET /enterprise/work-overview": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.OVERVIEW.READ",
+      "scope": "本企业"
+    },
+    "GET /enterprise/profile": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.FILING.READ",
+      "scope": "本企业备案"
+    },
+    "GET /enterprise/filing": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.FILING.READ",
+      "scope": "本企业备案"
+    },
+    "GET /enterprise/filing/versions/{version}": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.FILING.READ",
+      "scope": "本企业备案"
+    },
+    "PUT /enterprise/profile": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.FILING.DRAFT_SAVE",
+      "scope": "本企业备案"
+    },
+    "POST /enterprise/filing/submit": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.FILING.SUBMIT",
+      "scope": "本企业备案"
+    },
+    "GET /enterprise/periods": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.REPORT.READ",
+      "scope": "本企业报表和调查期"
+    },
+    "GET /enterprise/reports": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.REPORT.READ",
+      "scope": "本企业报表和调查期"
+    },
+    "GET /enterprise/reports/{periodCode}": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.REPORT.READ",
+      "scope": "本企业报表和调查期"
+    },
+    "GET /enterprise/reports/{periodCode}/history": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.REPORT.READ",
+      "scope": "本企业报表和调查期"
+    },
+    "PUT /enterprise/reports/{periodCode}": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.REPORT.DRAFT_SAVE",
+      "scope": "本企业报表"
+    },
+    "POST /enterprise/reports/{periodCode}/submit": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.REPORT.SUBMIT",
+      "scope": "本企业报表"
+    },
+    "POST /enterprise/reports/batch-submit": {
+      "identity": "ENTERPRISE",
+      "permission": "ENTERPRISE.REPORT.SUBMIT",
+      "scope": "本企业报表"
+    },
+    "GET /notices": {
+      "identity": [
+        "PROVINCE",
+        "CITY",
+        "ENTERPRISE"
+      ],
+      "permissionByIdentity": {
+        "PROVINCE": "PROVINCE.NOTICE.READ",
+        "CITY": "CITY.NOTICE.READ",
+        "ENTERPRISE": "ENTERPRISE.NOTICE.READ"
+      },
+      "scope": "本省或本市可见通知，沿用原通知可见规则"
+    },
+    "GET /notices/{noticeId}": {
+      "identity": [
+        "PROVINCE",
+        "CITY",
+        "ENTERPRISE"
+      ],
+      "permissionByIdentity": {
+        "PROVINCE": "PROVINCE.NOTICE.READ",
+        "CITY": "CITY.NOTICE.READ",
+        "ENTERPRISE": "ENTERPRISE.NOTICE.READ"
+      },
+      "scope": "本省或本市可见通知，沿用原通知可见规则"
+    },
+    "GET /health": {
+      "identity": "PUBLIC",
+      "permission": null,
+      "scope": "公开健康检查"
+    },
+    "POST /auth/login": {
+      "identity": "PUBLIC",
+      "permission": null,
+      "scope": "账号密码登录"
+    },
+    "GET /auth/me": {
+      "identity": "AUTHENTICATED",
+      "permission": null,
+      "scope": "当前账号"
+    },
+    "GET /meta/regions": {
+      "identity": "AUTHENTICATED",
+      "permission": null,
+      "scope": "登录后读取；仍限制原有组织与身份范围"
+    },
+    "GET /enterprise/filing/options": {
+      "identity": "ENTERPRISE",
+      "permission": null,
+      "scope": "已登录企业账号；仅返回对应业务公共选项，无额外功能权限"
+    },
+    "GET /enterprise/reports/options": {
+      "identity": "ENTERPRISE",
+      "permission": null,
+      "scope": "已登录企业账号；仅返回对应业务公共选项，无额外功能权限"
+    },
+    "GET /province/admin/organizations": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.READ",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "GET /province/admin/users": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.READ",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "POST /province/admin/users": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.CREATE",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "GET /province/admin/users/{id}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.READ",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "PUT /province/admin/users/{id}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.UPDATE",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "DELETE /province/admin/users/{id}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.DELETE",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "PUT /province/admin/users/{id}/status": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.STATUS",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "POST /province/admin/users/{id}/reset-password": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.USER.RESET_PASSWORD",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "GET /province/admin/permissions": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ROLE.READ",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "GET /province/admin/roles": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ROLE.READ",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "POST /province/admin/roles": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ROLE.CREATE",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "GET /province/admin/roles/{id}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ROLE.READ",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "PUT /province/admin/roles/{id}": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ROLE.UPDATE",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "POST /province/admin/roles/{id}/replace-and-delete": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.ROLE.DELETE",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    },
+    "GET /province/admin/monitor": {
+      "identity": "PROVINCE",
+      "permission": "PROVINCE.MONITOR.READ",
+      "scope": "仅令牌所属省；跨省对象对本省管理员不可见"
+    }
+  },
+  "paths": {
+    "/province/admin/organizations": {
+      "get": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "选择本省已有且启用的组织",
+        "operationId": "get_province_admin_organizations",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.READ",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "orgType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PROVINCE",
+                "CITY",
+                "ENTERPRISE"
+              ]
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "description": "组织名包含查询，去首尾空白"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationPageEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "id": "301",
+                        "name": "示例企业",
+                        "orgType": "ENTERPRISE",
+                        "regionCode": "530102",
+                        "regionName": "五华区",
+                        "parentOrgId": "201",
+                        "enabled": true
+                      }
+                    ],
+                    "page": 0,
+                    "size": 20,
+                    "total": 1
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/province/admin/users": {
+      "get": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "按组织、身份、状态和姓名分页查询账号",
+        "operationId": "get_province_admin_users",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.READ",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          },
+          {
+            "name": "roleCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PROVINCE",
+                "CITY",
+                "ENTERPRISE"
+              ]
+            }
+          },
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            },
+            "description": "用户名或显示姓名包含查询，去首尾空白"
+          },
+          {
+            "name": "functionalRoleId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "description": "角色详情页显示其已分配用户时使用"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPageEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "id": "101",
+                        "username": "enterprise_operator",
+                        "displayName": "企业填报员",
+                        "org": {
+                          "id": "301",
+                          "name": "示例企业",
+                          "orgType": "ENTERPRISE",
+                          "regionCode": "530102",
+                          "regionName": "五华区",
+                          "parentOrgId": "201",
+                          "enabled": true
+                        },
+                        "roleCode": "ENTERPRISE",
+                        "functionalRoles": [
+                          {
+                            "id": "9001",
+                            "code": "CUSTOM_9001",
+                            "name": "企业填报",
+                            "level": "ENTERPRISE"
+                          }
+                        ],
+                        "permissions": [
+                          "ENTERPRISE.FILING.READ",
+                          "ENTERPRISE.REPORT.READ",
+                          "ENTERPRISE.REPORT.SUBMIT"
+                        ],
+                        "enabled": true,
+                        "version": 1,
+                        "createdAt": "2026-11-14T02:00:00Z"
+                      }
+                    ],
+                    "page": 0,
+                    "size": 20,
+                    "total": 1
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "在已有组织内创建账号",
+        "operationId": "post_province_admin_users",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.CREATE",
+        "x-scope": "令牌所属省及其既有组织树",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserCreate"
+              },
+              "example": {
+                "orgId": "301",
+                "username": "enterprise_operator",
+                "displayName": "企业填报员",
+                "initialPassword": "Example123!",
+                "functionalRoleIds": [
+                  "9001"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "101",
+                    "username": "enterprise_operator",
+                    "displayName": "企业填报员",
+                    "org": {
+                      "id": "301",
+                      "name": "示例企业",
+                      "orgType": "ENTERPRISE",
+                      "regionCode": "530102",
+                      "regionName": "五华区",
+                      "parentOrgId": "201",
+                      "enabled": true
+                    },
+                    "roleCode": "ENTERPRISE",
+                    "functionalRoles": [
+                      {
+                        "id": "9001",
+                        "code": "CUSTOM_9001",
+                        "name": "企业填报",
+                        "level": "ENTERPRISE"
+                      }
+                    ],
+                    "permissions": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "enabled": true,
+                    "version": 1,
+                    "createdAt": "2026-11-14T02:00:00Z"
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/admin/users/{id}": {
+      "get": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "查看账号详情与有效权限",
+        "operationId": "get_province_admin_users__id_",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.READ",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "101",
+                    "username": "enterprise_operator",
+                    "displayName": "企业填报员",
+                    "org": {
+                      "id": "301",
+                      "name": "示例企业",
+                      "orgType": "ENTERPRISE",
+                      "regionCode": "530102",
+                      "regionName": "五华区",
+                      "parentOrgId": "201",
+                      "enabled": true
+                    },
+                    "roleCode": "ENTERPRISE",
+                    "functionalRoles": [
+                      {
+                        "id": "9001",
+                        "code": "CUSTOM_9001",
+                        "name": "企业填报",
+                        "level": "ENTERPRISE"
+                      }
+                    ],
+                    "permissions": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "enabled": true,
+                    "version": 1,
+                    "createdAt": "2026-11-14T02:00:00Z"
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "修改显示姓名并整组替换功能角色",
+        "operationId": "put_province_admin_users__id_",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.UPDATE",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdate"
+              },
+              "example": {
+                "displayName": "企业填报员甲",
+                "functionalRoleIds": [
+                  "9001"
+                ],
+                "expectedVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "101",
+                    "username": "enterprise_operator",
+                    "displayName": "企业填报员甲",
+                    "org": {
+                      "id": "301",
+                      "name": "示例企业",
+                      "orgType": "ENTERPRISE",
+                      "regionCode": "530102",
+                      "regionName": "五华区",
+                      "parentOrgId": "201",
+                      "enabled": true
+                    },
+                    "roleCode": "ENTERPRISE",
+                    "functionalRoles": [
+                      {
+                        "id": "9001",
+                        "code": "CUSTOM_9001",
+                        "name": "企业填报",
+                        "level": "ENTERPRISE"
+                      }
+                    ],
+                    "permissions": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "enabled": true,
+                    "version": 2,
+                    "createdAt": "2026-11-14T02:00:00Z"
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "逻辑删除没有正式历史的账号",
+        "operationId": "delete_province_admin_users__id_",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.DELETE",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VersionRequest"
+              },
+              "example": {
+                "expectedVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "逻辑删除成功；返回删除前账号摘要与更新后版本，普通列表不再出现",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "101",
+                    "username": "enterprise_operator",
+                    "displayName": "企业填报员",
+                    "org": {
+                      "id": "301",
+                      "name": "示例企业",
+                      "orgType": "ENTERPRISE",
+                      "regionCode": "530102",
+                      "regionName": "五华区",
+                      "parentOrgId": "201",
+                      "enabled": true
+                    },
+                    "roleCode": "ENTERPRISE",
+                    "functionalRoles": [
+                      {
+                        "id": "9001",
+                        "code": "CUSTOM_9001",
+                        "name": "企业填报",
+                        "level": "ENTERPRISE"
+                      }
+                    ],
+                    "permissions": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "enabled": false,
+                    "version": 2,
+                    "createdAt": "2026-11-14T02:00:00Z"
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/admin/users/{id}/status": {
+      "put": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "启用或停用账号",
+        "operationId": "put_province_admin_users__id__status",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.STATUS",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserStatus"
+              },
+              "example": {
+                "enabled": false,
+                "expectedVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "101",
+                    "username": "enterprise_operator",
+                    "displayName": "企业填报员",
+                    "org": {
+                      "id": "301",
+                      "name": "示例企业",
+                      "orgType": "ENTERPRISE",
+                      "regionCode": "530102",
+                      "regionName": "五华区",
+                      "parentOrgId": "201",
+                      "enabled": true
+                    },
+                    "roleCode": "ENTERPRISE",
+                    "functionalRoles": [
+                      {
+                        "id": "9001",
+                        "code": "CUSTOM_9001",
+                        "name": "企业填报",
+                        "level": "ENTERPRISE"
+                      }
+                    ],
+                    "permissions": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "enabled": false,
+                    "version": 2,
+                    "createdAt": "2026-11-14T02:00:00Z"
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/admin/users/{id}/reset-password": {
+      "post": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "管理员输入新密码并使旧令牌失效",
+        "operationId": "post_province_admin_users__id__reset_password",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.USER.RESET_PASSWORD",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserReset"
+              },
+              "example": {
+                "newPassword": "Newpass123!",
+                "expectedVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "101",
+                    "username": "enterprise_operator",
+                    "displayName": "企业填报员",
+                    "org": {
+                      "id": "301",
+                      "name": "示例企业",
+                      "orgType": "ENTERPRISE",
+                      "regionCode": "530102",
+                      "regionName": "五华区",
+                      "parentOrgId": "201",
+                      "enabled": true
+                    },
+                    "roleCode": "ENTERPRISE",
+                    "functionalRoles": [
+                      {
+                        "id": "9001",
+                        "code": "CUSTOM_9001",
+                        "name": "企业填报",
+                        "level": "ENTERPRISE"
+                      }
+                    ],
+                    "permissions": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "enabled": true,
+                    "version": 2,
+                    "createdAt": "2026-11-14T02:00:00Z"
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/admin/permissions": {
+      "get": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "读取不可自定义的固定功能权限目录",
+        "operationId": "get_province_admin_permissions",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.ROLE.READ",
+        "x-scope": "令牌所属省及其既有组织树",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionCatalogEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "code": "PROVINCE.OVERVIEW.READ",
+                        "name": "工作概览：查看",
+                        "level": "PROVINCE",
+                        "feature": "工作概览",
+                        "operation": "查看"
+                      },
+                      {
+                        "code": "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+                        "name": "企业账号：创建企业组织和首个账号",
+                        "level": "PROVINCE",
+                        "feature": "企业账号",
+                        "operation": "创建企业组织和首个账号"
+                      },
+                      {
+                        "code": "PROVINCE.ACCOUNT.READ",
+                        "name": "全省账号查询：查询",
+                        "level": "PROVINCE",
+                        "feature": "全省账号查询",
+                        "operation": "查询"
+                      }
+                    ]
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/province/admin/roles": {
+      "get": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "分页查询本省角色和三个全局默认角色",
+        "operationId": "get_province_admin_roles",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.ROLE.READ",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PROVINCE",
+                "CITY",
+                "ENTERPRISE"
+              ]
+            }
+          },
+          {
+            "name": "keyword",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "description": "角色名包含查询"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RolePageEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "items": [
+                      {
+                        "id": "9001",
+                        "code": "CUSTOM_9001",
+                        "name": "企业填报",
+                        "level": "ENTERPRISE",
+                        "permissionCodes": [
+                          "ENTERPRISE.FILING.READ",
+                          "ENTERPRISE.REPORT.READ",
+                          "ENTERPRISE.REPORT.SUBMIT"
+                        ],
+                        "assignedUserCount": 1,
+                        "systemProtected": false,
+                        "version": 1
+                      }
+                    ],
+                    "page": 0,
+                    "size": 20,
+                    "total": 1
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "创建本省同级自定义功能角色",
+        "operationId": "post_province_admin_roles",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.ROLE.CREATE",
+        "x-scope": "令牌所属省及其既有组织树",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleCreate"
+              },
+              "example": {
+                "name": "企业填报",
+                "level": "ENTERPRISE",
+                "permissionCodes": [
+                  "ENTERPRISE.FILING.READ",
+                  "ENTERPRISE.REPORT.READ",
+                  "ENTERPRISE.REPORT.SUBMIT"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "9001",
+                    "code": "CUSTOM_9001",
+                    "name": "企业填报",
+                    "level": "ENTERPRISE",
+                    "permissionCodes": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "assignedUserCount": 1,
+                    "systemProtected": false,
+                    "version": 1
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/admin/roles/{id}": {
+      "get": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "读取角色权限和已分配人数",
+        "operationId": "get_province_admin_roles__id_",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.ROLE.READ",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "9001",
+                    "code": "CUSTOM_9001",
+                    "name": "企业填报",
+                    "level": "ENTERPRISE",
+                    "permissionCodes": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "assignedUserCount": 1,
+                    "systemProtected": false,
+                    "version": 1
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "整组替换角色名称及权限",
+        "operationId": "put_province_admin_roles__id_",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.ROLE.UPDATE",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdate"
+              },
+              "example": {
+                "name": "企业填报专员",
+                "permissionCodes": [
+                  "ENTERPRISE.FILING.READ",
+                  "ENTERPRISE.REPORT.READ",
+                  "ENTERPRISE.REPORT.SUBMIT"
+                ],
+                "expectedVersion": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "id": "9001",
+                    "code": "CUSTOM_9001",
+                    "name": "企业填报专员",
+                    "level": "ENTERPRISE",
+                    "permissionCodes": [
+                      "ENTERPRISE.FILING.READ",
+                      "ENTERPRISE.REPORT.READ",
+                      "ENTERPRISE.REPORT.SUBMIT"
+                    ],
+                    "assignedUserCount": 1,
+                    "systemProtected": false,
+                    "version": 2
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/admin/roles/{id}/replace-and-delete": {
+      "post": {
+        "tags": [
+          "省级用户与角色管理"
+        ],
+        "summary": "替代已分配角色后事务性删除自定义角色",
+        "operationId": "post_province_admin_roles__id__replace_and_delete",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.ROLE.DELETE",
+        "x-scope": "令牌所属省及其既有组织树",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleDelete"
+              },
+              "example": {
+                "expectedVersion": 1,
+                "replacementRoleId": "9002"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleDeleteResultEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "deletedRoleId": "9001",
+                    "affectedUserCount": 1,
+                    "replacementRoleId": "9002"
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/province/admin/monitor": {
+      "get": {
+        "tags": [
+          "省级系统监控"
+        ],
+        "summary": "查看当前主机资源与三项依赖的实际状态",
+        "operationId": "get_province_admin_monitor",
+        "x-changeType": "NEW",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.MONITOR.READ",
+        "x-scope": "令牌所属省及其既有组织树",
+        "responses": {
+          "200": {
+            "description": "操作成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "sampledAt": "2026-11-14T02:00:00Z",
+                    "cpu": {
+                      "status": "UP",
+                      "usagePercent": 12.5,
+                      "checkedAt": "2026-11-14T02:00:00Z"
+                    },
+                    "memory": {
+                      "status": "UP",
+                      "usedBytes": 4096000000,
+                      "totalBytes": 8192000000,
+                      "checkedAt": "2026-11-14T02:00:00Z"
+                    },
+                    "disk": {
+                      "status": "UP",
+                      "usedBytes": 10240000000,
+                      "totalBytes": 51200000000,
+                      "checkedAt": "2026-11-14T02:00:00Z"
+                    },
+                    "backend": {
+                      "status": "UP",
+                      "version": "1.0.0",
+                      "startedAt": "2026-11-14T01:00:00Z",
+                      "checkedAt": "2026-11-14T02:00:00Z"
+                    },
+                    "mysql": {
+                      "status": "UP",
+                      "checkedAt": "2026-11-14T02:00:00Z"
+                    },
+                    "rabbitmq": {
+                      "status": "UP",
+                      "checkedAt": "2026-11-14T02:00:00Z"
+                    },
+                    "nationalReceiver": {
+                      "status": "UP",
+                      "checkedAt": "2026-11-14T02:00:00Z"
+                    }
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "当前登录人"
+        ],
+        "summary": "读取当前身份和最新功能权限",
+        "operationId": "getCurrentUserWithPermissions",
+        "x-changeType": "MODIFIED",
+        "x-requiredIdentity": "AUTHENTICATED",
+        "x-requiredPermission": null,
+        "description": "保持 data.user.roleCode 为唯一身份角色；增加 functionalRoles 和 permissions。角色变更后下一次请求立即读最新权限。",
+        "responses": {
+          "200": {
+            "description": "当前用户信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDataEnvelope"
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "user": {
+                      "id": "101",
+                      "displayName": "企业填报员",
+                      "roleCode": "ENTERPRISE",
+                      "functionalRoles": [
+                        {
+                          "id": "9001",
+                          "code": "CUSTOM_9001",
+                          "name": "企业填报",
+                          "level": "ENTERPRISE"
+                        }
+                      ],
+                      "permissions": [
+                        "ENTERPRISE.FILING.READ",
+                        "ENTERPRISE.REPORT.READ",
+                        "ENTERPRISE.REPORT.SUBMIT"
+                      ],
+                      "orgId": "301",
+                      "orgName": "示例企业"
+                    }
+                  },
+                  "traceId": "example-trace"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/province/enterprise-accounts": {
+      "post": {
+        "tags": [
+          "现有省级企业建号"
+        ],
+        "summary": "创建企业组织和首个账号，自动赋 ENTERPRISE_DEFAULT",
+        "operationId": "createEnterpriseAccountWithDefaultRole",
+        "x-changeType": "MODIFIED",
+        "x-requiredIdentity": "PROVINCE",
+        "x-requiredPermission": "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+        "description": "请求与成功响应字段维持第二周契约；新增账号自动获得 ENTERPRISE_DEFAULT 功能角色。原有身份及地区规则继续生效。",
+        "responses": {
+          "201": {
+            "description": "创建成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message",
+                    "data",
+                    "traceId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "const": "OK"
+                    },
+                    "message": {
+                      "type": "string",
+                      "const": ""
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/EnterpriseAccountData"
+                    },
+                    "traceId": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "example": {
+                  "code": "OK",
+                  "message": "",
+                  "data": {
+                    "orgId": "301",
+                    "userId": "101",
+                    "username": "demo_new_enterprise",
+                    "orgName": "演示企业甲",
+                    "region": {
+                      "code": "DEMO_C",
+                      "name": "演示市",
+                      "path": [
+                        {
+                          "code": "DEMO_P",
+                          "name": "演示省",
+                          "level": 1
+                        },
+                        {
+                          "code": "DEMO_C",
+                          "name": "演示市",
+                          "level": 2
+                        }
+                      ]
+                    },
+                    "enabled": true
+                  },
+                  "traceId": "example-trace-id"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnterpriseAccountCreateRequest"
+              },
+              "example": {
+                "username": "demo_new_enterprise",
+                "initialPassword": "Example123!",
+                "orgName": "演示企业甲",
+                "regionCode": "DEMO_C"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "FunctionalRoleBrief": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "code",
+          "name",
+          "level"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          }
+        }
+      },
+      "Organization": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "orgType",
+          "regionCode",
+          "regionName",
+          "parentOrgId",
+          "enabled"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "orgType": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          },
+          "regionCode": {
+            "type": "string",
+            "maxLength": 12
+          },
+          "regionName": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "parentOrgId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "OrganizationPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "page",
+          "size",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Organization"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "User": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "username",
+          "displayName",
+          "org",
+          "roleCode",
+          "functionalRoles",
+          "permissions",
+          "enabled",
+          "version",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "org": {
+            "$ref": "#/components/schemas/Organization"
+          },
+          "roleCode": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          },
+          "functionalRoles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FunctionalRoleBrief"
+            },
+            "minItems": 1
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "enum": [
+                "PROVINCE.OVERVIEW.READ",
+                "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+                "PROVINCE.ACCOUNT.READ",
+                "PROVINCE.FILING.READ",
+                "PROVINCE.FILING.APPROVE",
+                "PROVINCE.FILING.RETURN",
+                "PROVINCE.PERIOD.READ",
+                "PROVINCE.PERIOD.CREATE",
+                "PROVINCE.PERIOD.UPDATE",
+                "PROVINCE.REPORT.READ",
+                "PROVINCE.REPORT.APPROVE",
+                "PROVINCE.REPORT.RETURN",
+                "PROVINCE.DATA.READ",
+                "PROVINCE.DATA.EXPORT",
+                "PROVINCE.DATA.CORRECT",
+                "PROVINCE.DATA.VOID",
+                "PROVINCE.ANALYSIS.READ",
+                "PROVINCE.NOTICE.READ",
+                "PROVINCE.NOTICE.CREATE",
+                "PROVINCE.NOTICE.UPDATE",
+                "PROVINCE.NOTICE.DELETE",
+                "PROVINCE.NATIONAL.READ",
+                "PROVINCE.NATIONAL.PROXY_CREATE",
+                "PROVINCE.NATIONAL.PROXY_DELETE",
+                "PROVINCE.NATIONAL.BATCH_CREATE",
+                "PROVINCE.NATIONAL.RETRY",
+                "PROVINCE.USER.READ",
+                "PROVINCE.USER.CREATE",
+                "PROVINCE.USER.UPDATE",
+                "PROVINCE.USER.STATUS",
+                "PROVINCE.USER.RESET_PASSWORD",
+                "PROVINCE.USER.DELETE",
+                "PROVINCE.ROLE.READ",
+                "PROVINCE.ROLE.CREATE",
+                "PROVINCE.ROLE.UPDATE",
+                "PROVINCE.ROLE.DELETE",
+                "PROVINCE.MONITOR.READ",
+                "CITY.OVERVIEW.READ",
+                "CITY.REPORT.READ",
+                "CITY.REPORT.APPROVE",
+                "CITY.REPORT.RETURN",
+                "CITY.NOTICE.READ",
+                "CITY.NOTICE.CREATE",
+                "CITY.NOTICE.UPDATE",
+                "CITY.NOTICE.DELETE",
+                "ENTERPRISE.OVERVIEW.READ",
+                "ENTERPRISE.FILING.READ",
+                "ENTERPRISE.FILING.DRAFT_SAVE",
+                "ENTERPRISE.FILING.SUBMIT",
+                "ENTERPRISE.REPORT.READ",
+                "ENTERPRISE.REPORT.DRAFT_SAVE",
+                "ENTERPRISE.REPORT.SUBMIT",
+                "ENTERPRISE.NOTICE.READ"
+              ]
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，Z 结尾"
+          }
+        }
+      },
+      "UserPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "page",
+          "size",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/User"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "UserCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "orgId",
+          "username",
+          "displayName",
+          "initialPassword",
+          "functionalRoleIds"
+        ],
+        "properties": {
+          "orgId": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "initialPassword": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 64,
+            "pattern": "^(?=.*[A-Za-z])(?=.*[0-9])[!-~]{8,64}$"
+          },
+          "functionalRoleIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minItems": 1
+          }
+        }
+      },
+      "UserUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "displayName",
+          "functionalRoleIds",
+          "expectedVersion"
+        ],
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "functionalRoleIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+$"
+            },
+            "minItems": 1
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "UserStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "enabled",
+          "expectedVersion"
+        ],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "UserReset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "newPassword",
+          "expectedVersion"
+        ],
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "format": "password",
+            "minLength": 8,
+            "maxLength": 64,
+            "pattern": "^(?=.*[A-Za-z])(?=.*[0-9])[!-~]{8,64}$"
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "VersionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "Permission": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "level",
+          "feature",
+          "operation"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 80,
+            "enum": [
+              "PROVINCE.OVERVIEW.READ",
+              "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+              "PROVINCE.ACCOUNT.READ",
+              "PROVINCE.FILING.READ",
+              "PROVINCE.FILING.APPROVE",
+              "PROVINCE.FILING.RETURN",
+              "PROVINCE.PERIOD.READ",
+              "PROVINCE.PERIOD.CREATE",
+              "PROVINCE.PERIOD.UPDATE",
+              "PROVINCE.REPORT.READ",
+              "PROVINCE.REPORT.APPROVE",
+              "PROVINCE.REPORT.RETURN",
+              "PROVINCE.DATA.READ",
+              "PROVINCE.DATA.EXPORT",
+              "PROVINCE.DATA.CORRECT",
+              "PROVINCE.DATA.VOID",
+              "PROVINCE.ANALYSIS.READ",
+              "PROVINCE.NOTICE.READ",
+              "PROVINCE.NOTICE.CREATE",
+              "PROVINCE.NOTICE.UPDATE",
+              "PROVINCE.NOTICE.DELETE",
+              "PROVINCE.NATIONAL.READ",
+              "PROVINCE.NATIONAL.PROXY_CREATE",
+              "PROVINCE.NATIONAL.PROXY_DELETE",
+              "PROVINCE.NATIONAL.BATCH_CREATE",
+              "PROVINCE.NATIONAL.RETRY",
+              "PROVINCE.USER.READ",
+              "PROVINCE.USER.CREATE",
+              "PROVINCE.USER.UPDATE",
+              "PROVINCE.USER.STATUS",
+              "PROVINCE.USER.RESET_PASSWORD",
+              "PROVINCE.USER.DELETE",
+              "PROVINCE.ROLE.READ",
+              "PROVINCE.ROLE.CREATE",
+              "PROVINCE.ROLE.UPDATE",
+              "PROVINCE.ROLE.DELETE",
+              "PROVINCE.MONITOR.READ",
+              "CITY.OVERVIEW.READ",
+              "CITY.REPORT.READ",
+              "CITY.REPORT.APPROVE",
+              "CITY.REPORT.RETURN",
+              "CITY.NOTICE.READ",
+              "CITY.NOTICE.CREATE",
+              "CITY.NOTICE.UPDATE",
+              "CITY.NOTICE.DELETE",
+              "ENTERPRISE.OVERVIEW.READ",
+              "ENTERPRISE.FILING.READ",
+              "ENTERPRISE.FILING.DRAFT_SAVE",
+              "ENTERPRISE.FILING.SUBMIT",
+              "ENTERPRISE.REPORT.READ",
+              "ENTERPRISE.REPORT.DRAFT_SAVE",
+              "ENTERPRISE.REPORT.SUBMIT",
+              "ENTERPRISE.NOTICE.READ"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          },
+          "feature": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "operation": {
+            "type": "string",
+            "maxLength": 80
+          }
+        }
+      },
+      "PermissionCatalog": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Permission"
+            }
+          }
+        }
+      },
+      "Role": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "code",
+          "name",
+          "level",
+          "permissionCodes",
+          "assignedUserCount",
+          "systemProtected",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 50
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          },
+          "permissionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "enum": [
+                "PROVINCE.OVERVIEW.READ",
+                "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+                "PROVINCE.ACCOUNT.READ",
+                "PROVINCE.FILING.READ",
+                "PROVINCE.FILING.APPROVE",
+                "PROVINCE.FILING.RETURN",
+                "PROVINCE.PERIOD.READ",
+                "PROVINCE.PERIOD.CREATE",
+                "PROVINCE.PERIOD.UPDATE",
+                "PROVINCE.REPORT.READ",
+                "PROVINCE.REPORT.APPROVE",
+                "PROVINCE.REPORT.RETURN",
+                "PROVINCE.DATA.READ",
+                "PROVINCE.DATA.EXPORT",
+                "PROVINCE.DATA.CORRECT",
+                "PROVINCE.DATA.VOID",
+                "PROVINCE.ANALYSIS.READ",
+                "PROVINCE.NOTICE.READ",
+                "PROVINCE.NOTICE.CREATE",
+                "PROVINCE.NOTICE.UPDATE",
+                "PROVINCE.NOTICE.DELETE",
+                "PROVINCE.NATIONAL.READ",
+                "PROVINCE.NATIONAL.PROXY_CREATE",
+                "PROVINCE.NATIONAL.PROXY_DELETE",
+                "PROVINCE.NATIONAL.BATCH_CREATE",
+                "PROVINCE.NATIONAL.RETRY",
+                "PROVINCE.USER.READ",
+                "PROVINCE.USER.CREATE",
+                "PROVINCE.USER.UPDATE",
+                "PROVINCE.USER.STATUS",
+                "PROVINCE.USER.RESET_PASSWORD",
+                "PROVINCE.USER.DELETE",
+                "PROVINCE.ROLE.READ",
+                "PROVINCE.ROLE.CREATE",
+                "PROVINCE.ROLE.UPDATE",
+                "PROVINCE.ROLE.DELETE",
+                "PROVINCE.MONITOR.READ",
+                "CITY.OVERVIEW.READ",
+                "CITY.REPORT.READ",
+                "CITY.REPORT.APPROVE",
+                "CITY.REPORT.RETURN",
+                "CITY.NOTICE.READ",
+                "CITY.NOTICE.CREATE",
+                "CITY.NOTICE.UPDATE",
+                "CITY.NOTICE.DELETE",
+                "ENTERPRISE.OVERVIEW.READ",
+                "ENTERPRISE.FILING.READ",
+                "ENTERPRISE.FILING.DRAFT_SAVE",
+                "ENTERPRISE.FILING.SUBMIT",
+                "ENTERPRISE.REPORT.READ",
+                "ENTERPRISE.REPORT.DRAFT_SAVE",
+                "ENTERPRISE.REPORT.SUBMIT",
+                "ENTERPRISE.NOTICE.READ"
+              ]
+            }
+          },
+          "assignedUserCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "当前未逻辑删除、仍分配此角色的账号数；包含停用账号。"
+          },
+          "systemProtected": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "RolePage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "page",
+          "size",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Role"
+            }
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "RoleCreate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "level",
+          "permissionCodes"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          },
+          "permissionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "enum": [
+                "PROVINCE.OVERVIEW.READ",
+                "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+                "PROVINCE.ACCOUNT.READ",
+                "PROVINCE.FILING.READ",
+                "PROVINCE.FILING.APPROVE",
+                "PROVINCE.FILING.RETURN",
+                "PROVINCE.PERIOD.READ",
+                "PROVINCE.PERIOD.CREATE",
+                "PROVINCE.PERIOD.UPDATE",
+                "PROVINCE.REPORT.READ",
+                "PROVINCE.REPORT.APPROVE",
+                "PROVINCE.REPORT.RETURN",
+                "PROVINCE.DATA.READ",
+                "PROVINCE.DATA.EXPORT",
+                "PROVINCE.DATA.CORRECT",
+                "PROVINCE.DATA.VOID",
+                "PROVINCE.ANALYSIS.READ",
+                "PROVINCE.NOTICE.READ",
+                "PROVINCE.NOTICE.CREATE",
+                "PROVINCE.NOTICE.UPDATE",
+                "PROVINCE.NOTICE.DELETE",
+                "PROVINCE.NATIONAL.READ",
+                "PROVINCE.NATIONAL.PROXY_CREATE",
+                "PROVINCE.NATIONAL.PROXY_DELETE",
+                "PROVINCE.NATIONAL.BATCH_CREATE",
+                "PROVINCE.NATIONAL.RETRY",
+                "PROVINCE.USER.READ",
+                "PROVINCE.USER.CREATE",
+                "PROVINCE.USER.UPDATE",
+                "PROVINCE.USER.STATUS",
+                "PROVINCE.USER.RESET_PASSWORD",
+                "PROVINCE.USER.DELETE",
+                "PROVINCE.ROLE.READ",
+                "PROVINCE.ROLE.CREATE",
+                "PROVINCE.ROLE.UPDATE",
+                "PROVINCE.ROLE.DELETE",
+                "PROVINCE.MONITOR.READ",
+                "CITY.OVERVIEW.READ",
+                "CITY.REPORT.READ",
+                "CITY.REPORT.APPROVE",
+                "CITY.REPORT.RETURN",
+                "CITY.NOTICE.READ",
+                "CITY.NOTICE.CREATE",
+                "CITY.NOTICE.UPDATE",
+                "CITY.NOTICE.DELETE",
+                "ENTERPRISE.OVERVIEW.READ",
+                "ENTERPRISE.FILING.READ",
+                "ENTERPRISE.FILING.DRAFT_SAVE",
+                "ENTERPRISE.FILING.SUBMIT",
+                "ENTERPRISE.REPORT.READ",
+                "ENTERPRISE.REPORT.DRAFT_SAVE",
+                "ENTERPRISE.REPORT.SUBMIT",
+                "ENTERPRISE.NOTICE.READ"
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      },
+      "RoleUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "permissionCodes",
+          "expectedVersion"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "permissionCodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "enum": [
+                "PROVINCE.OVERVIEW.READ",
+                "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+                "PROVINCE.ACCOUNT.READ",
+                "PROVINCE.FILING.READ",
+                "PROVINCE.FILING.APPROVE",
+                "PROVINCE.FILING.RETURN",
+                "PROVINCE.PERIOD.READ",
+                "PROVINCE.PERIOD.CREATE",
+                "PROVINCE.PERIOD.UPDATE",
+                "PROVINCE.REPORT.READ",
+                "PROVINCE.REPORT.APPROVE",
+                "PROVINCE.REPORT.RETURN",
+                "PROVINCE.DATA.READ",
+                "PROVINCE.DATA.EXPORT",
+                "PROVINCE.DATA.CORRECT",
+                "PROVINCE.DATA.VOID",
+                "PROVINCE.ANALYSIS.READ",
+                "PROVINCE.NOTICE.READ",
+                "PROVINCE.NOTICE.CREATE",
+                "PROVINCE.NOTICE.UPDATE",
+                "PROVINCE.NOTICE.DELETE",
+                "PROVINCE.NATIONAL.READ",
+                "PROVINCE.NATIONAL.PROXY_CREATE",
+                "PROVINCE.NATIONAL.PROXY_DELETE",
+                "PROVINCE.NATIONAL.BATCH_CREATE",
+                "PROVINCE.NATIONAL.RETRY",
+                "PROVINCE.USER.READ",
+                "PROVINCE.USER.CREATE",
+                "PROVINCE.USER.UPDATE",
+                "PROVINCE.USER.STATUS",
+                "PROVINCE.USER.RESET_PASSWORD",
+                "PROVINCE.USER.DELETE",
+                "PROVINCE.ROLE.READ",
+                "PROVINCE.ROLE.CREATE",
+                "PROVINCE.ROLE.UPDATE",
+                "PROVINCE.ROLE.DELETE",
+                "PROVINCE.MONITOR.READ",
+                "CITY.OVERVIEW.READ",
+                "CITY.REPORT.READ",
+                "CITY.REPORT.APPROVE",
+                "CITY.REPORT.RETURN",
+                "CITY.NOTICE.READ",
+                "CITY.NOTICE.CREATE",
+                "CITY.NOTICE.UPDATE",
+                "CITY.NOTICE.DELETE",
+                "ENTERPRISE.OVERVIEW.READ",
+                "ENTERPRISE.FILING.READ",
+                "ENTERPRISE.FILING.DRAFT_SAVE",
+                "ENTERPRISE.FILING.SUBMIT",
+                "ENTERPRISE.REPORT.READ",
+                "ENTERPRISE.REPORT.DRAFT_SAVE",
+                "ENTERPRISE.REPORT.SUBMIT",
+                "ENTERPRISE.NOTICE.READ"
+              ]
+            },
+            "minItems": 1
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "RoleDelete": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "replacementRoleId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "RoleDeleteResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "deletedRoleId",
+          "affectedUserCount",
+          "replacementRoleId"
+        ],
+        "properties": {
+          "deletedRoleId": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "affectedUserCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "本次实际替换角色的未逻辑删除账号数；包含停用账号。"
+          },
+          "replacementRoleId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CpuMetric": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "usagePercent",
+          "checkedAt"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "UP",
+              "DOWN",
+              "UNKNOWN"
+            ]
+          },
+          "usagePercent": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，Z 结尾"
+          }
+        }
+      },
+      "SizeMetric": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "usedBytes",
+          "totalBytes",
+          "checkedAt"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "UP",
+              "DOWN",
+              "UNKNOWN"
+            ]
+          },
+          "usedBytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "totalBytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，Z 结尾"
+          }
+        }
+      },
+      "BackendMetric": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "version",
+          "startedAt",
+          "checkedAt"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "UP",
+              "DOWN",
+              "UNKNOWN"
+            ]
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，Z 结尾"
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，Z 结尾"
+          }
+        }
+      },
+      "DependencyMetric": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "checkedAt"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "UP",
+              "DOWN",
+              "UNKNOWN"
+            ]
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，Z 结尾"
+          }
+        }
+      },
+      "Monitor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sampledAt",
+          "cpu",
+          "memory",
+          "disk",
+          "backend",
+          "mysql",
+          "rabbitmq",
+          "nationalReceiver"
+        ],
+        "properties": {
+          "sampledAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "UTC，Z 结尾"
+          },
+          "cpu": {
+            "$ref": "#/components/schemas/CpuMetric"
+          },
+          "memory": {
+            "$ref": "#/components/schemas/SizeMetric"
+          },
+          "disk": {
+            "$ref": "#/components/schemas/SizeMetric"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/BackendMetric"
+          },
+          "mysql": {
+            "$ref": "#/components/schemas/DependencyMetric"
+          },
+          "rabbitmq": {
+            "$ref": "#/components/schemas/DependencyMetric"
+          },
+          "nationalReceiver": {
+            "$ref": "#/components/schemas/DependencyMetric"
+          }
+        }
+      },
+      "MeUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "displayName",
+          "roleCode",
+          "orgId",
+          "orgName",
+          "functionalRoles",
+          "permissions"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "displayName": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "roleCode": {
+            "type": "string",
+            "enum": [
+              "PROVINCE",
+              "CITY",
+              "ENTERPRISE"
+            ]
+          },
+          "orgId": {
+            "type": "string",
+            "pattern": "^[0-9]+$"
+          },
+          "orgName": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "functionalRoles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FunctionalRoleBrief"
+            },
+            "minItems": 1
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "enum": [
+                "PROVINCE.OVERVIEW.READ",
+                "PROVINCE.ENTERPRISE_ACCOUNT.CREATE",
+                "PROVINCE.ACCOUNT.READ",
+                "PROVINCE.FILING.READ",
+                "PROVINCE.FILING.APPROVE",
+                "PROVINCE.FILING.RETURN",
+                "PROVINCE.PERIOD.READ",
+                "PROVINCE.PERIOD.CREATE",
+                "PROVINCE.PERIOD.UPDATE",
+                "PROVINCE.REPORT.READ",
+                "PROVINCE.REPORT.APPROVE",
+                "PROVINCE.REPORT.RETURN",
+                "PROVINCE.DATA.READ",
+                "PROVINCE.DATA.EXPORT",
+                "PROVINCE.DATA.CORRECT",
+                "PROVINCE.DATA.VOID",
+                "PROVINCE.ANALYSIS.READ",
+                "PROVINCE.NOTICE.READ",
+                "PROVINCE.NOTICE.CREATE",
+                "PROVINCE.NOTICE.UPDATE",
+                "PROVINCE.NOTICE.DELETE",
+                "PROVINCE.NATIONAL.READ",
+                "PROVINCE.NATIONAL.PROXY_CREATE",
+                "PROVINCE.NATIONAL.PROXY_DELETE",
+                "PROVINCE.NATIONAL.BATCH_CREATE",
+                "PROVINCE.NATIONAL.RETRY",
+                "PROVINCE.USER.READ",
+                "PROVINCE.USER.CREATE",
+                "PROVINCE.USER.UPDATE",
+                "PROVINCE.USER.STATUS",
+                "PROVINCE.USER.RESET_PASSWORD",
+                "PROVINCE.USER.DELETE",
+                "PROVINCE.ROLE.READ",
+                "PROVINCE.ROLE.CREATE",
+                "PROVINCE.ROLE.UPDATE",
+                "PROVINCE.ROLE.DELETE",
+                "PROVINCE.MONITOR.READ",
+                "CITY.OVERVIEW.READ",
+                "CITY.REPORT.READ",
+                "CITY.REPORT.APPROVE",
+                "CITY.REPORT.RETURN",
+                "CITY.NOTICE.READ",
+                "CITY.NOTICE.CREATE",
+                "CITY.NOTICE.UPDATE",
+                "CITY.NOTICE.DELETE",
+                "ENTERPRISE.OVERVIEW.READ",
+                "ENTERPRISE.FILING.READ",
+                "ENTERPRISE.FILING.DRAFT_SAVE",
+                "ENTERPRISE.FILING.SUBMIT",
+                "ENTERPRISE.REPORT.READ",
+                "ENTERPRISE.REPORT.DRAFT_SAVE",
+                "ENTERPRISE.REPORT.SUBMIT",
+                "ENTERPRISE.NOTICE.READ"
+              ]
+            }
+          }
+        }
+      },
+      "MeData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user"
+        ],
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/MeUser"
+          }
+        }
+      },
+      "ErrorData": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "reasonCode": {
+            "type": "string",
+            "enum": [
+              "USERNAME_EXISTS",
+              "USER_HAS_HISTORY",
+              "LAST_ADMIN",
+              "ROLE_REPLACEMENT_REQUIRED",
+              "ROLE_LEVEL_MISMATCH",
+              "VERSION_CONFLICT",
+              "ROLE_NAME_EXISTS",
+              "PROTECTED_ROLE"
+            ]
+          },
+          "fieldErrors": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "historyTypes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "REPORT_SUBMISSION",
+                "FILING_REVIEW",
+                "REPORT_REVIEW"
+              ]
+            }
+          }
+        }
+      },
+      "OrganizationPageEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrganizationPage"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "UserPageEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserPage"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "UserEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/User"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "PermissionCatalogEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/PermissionCatalog"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "RolePageEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/RolePage"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "RoleEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/Role"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "RoleDeleteResultEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/RoleDeleteResult"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "MonitorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/Monitor"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "MeDataEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "const": "OK"
+          },
+          "message": {
+            "type": "string",
+            "const": ""
+          },
+          "data": {
+            "$ref": "#/components/schemas/MeData"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "BAD_REQUEST",
+              "UNAUTHORIZED",
+              "FORBIDDEN",
+              "NOT_FOUND",
+              "CONFLICT",
+              "INTERNAL_ERROR"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "traceId": {
+            "type": "string"
+          }
+        }
+      },
+      "EnterpriseAccountCreateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "initialPassword",
+          "orgName",
+          "regionCode"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "initialPassword": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 64,
+            "pattern": "^(?=.*[A-Za-z])(?=.*[0-9])[!-~]{8,64}$",
+            "description": "8 至 64 位 ASCII 可见字符，不含空格，至少一个英文字母和一个数字；不得写入日志或响应"
+          },
+          "orgName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "regionCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12
+          }
+        }
+      },
+      "EnterpriseAccountData": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "orgId",
+          "userId",
+          "username",
+          "orgName",
+          "region",
+          "enabled"
+        ],
+        "properties": {
+          "orgId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "orgName": {
+            "type": "string"
+          },
+          "region": {
+            "$ref": "#/components/schemas/RegionInfo"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "RegionInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "path"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegionPathNode"
+            }
+          }
+        }
+      },
+      "RegionPathNode": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "name",
+          "level"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "level": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "参数、未知字段、权限编码或格式错误",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "code": "BAD_REQUEST",
+              "message": "请求参数不合法",
+              "data": {
+                "fieldErrors": {
+                  "displayName": "显示姓名不能为空"
+                }
+              },
+              "traceId": "example-trace"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "未登录、令牌过期、账号停用或密码重置使旧令牌失效",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "code": "UNAUTHORIZED",
+              "message": "未登录或登录已过期",
+              "data": null,
+              "traceId": "example-trace"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "身份、功能权限或原有组织辖区不允许",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "code": "FORBIDDEN",
+              "message": "无权访问",
+              "data": null,
+              "traceId": "example-trace"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "资源不存在或不属于本省",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "code": "NOT_FOUND",
+              "message": "资源不存在",
+              "data": null,
+              "traceId": "example-trace"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "版本或业务保护条件冲突；前端读取 data.reasonCode",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            },
+            "example": {
+              "code": "CONFLICT",
+              "message": "版本已变化，请刷新后重试",
+              "data": {
+                "reasonCode": "VERSION_CONFLICT"
+              },
+              "traceId": "example-trace"
+            }
+          }
+        }
+      }
+    }
+  }
+}

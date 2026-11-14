@@ -139,6 +139,7 @@ class WeekOneHttpIntegrationTests {
                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, id, orgId, username, hash, username, true);
         jdbc.update("INSERT INTO user_role (user_id, role_id) VALUES (?, ?)", id, roleId);
+        jdbc.update("INSERT INTO user_role (user_id, role_id) VALUES (?, ?)", id, 7 - roleId);
     }
 
     private HttpResponse<String> login(String username, String password) throws Exception {

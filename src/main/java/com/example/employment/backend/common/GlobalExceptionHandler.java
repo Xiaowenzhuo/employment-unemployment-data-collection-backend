@@ -2,6 +2,7 @@ package com.example.employment.backend.common;
 
 import com.example.employment.backend.week1.identity.service.AuthService.InvalidCredentialsException;
 import com.example.employment.backend.national.service.NationalApiException;
+import com.example.employment.backend.week78.shared.AdminConflictException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -59,6 +60,13 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> conflict(ConflictException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiResponse.error("CONFLICT", exception.getMessage()));
+    }
+
+    @ExceptionHandler(AdminConflictException.class)
+    public ResponseEntity<ApiResponse<Map<String, Object>>> adminConflict(
+            AdminConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error("CONFLICT", exception.getMessage(), exception.data()));
     }
 
     @ExceptionHandler(NationalApiException.class)

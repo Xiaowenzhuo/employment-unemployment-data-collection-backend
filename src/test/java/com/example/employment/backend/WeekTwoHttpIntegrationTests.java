@@ -64,7 +64,7 @@ class WeekTwoHttpIntegrationTests {
         assertThat(body(created).path("data").path("region").path("code").asText())
                 .isEqualTo("W2_D");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM user_role ur JOIN user_account u " +
-                "ON u.id=ur.user_id WHERE u.username='w2_first'", Integer.class)).isEqualTo(1);
+                "ON u.id=ur.user_id WHERE u.username='w2_first'", Integer.class)).isEqualTo(2);
         for (int length : new int[] {80, 81, 120}) {
             String name = "A".repeat(length);
             String username = "w2_long" + length;
@@ -284,6 +284,7 @@ class WeekTwoHttpIntegrationTests {
                 VALUES (?,?,?,?,?,true,CURRENT_TIMESTAMP)
                 """, id, org, username, passwords.encode("testPass123"), username);
         jdbc.update("INSERT INTO user_role VALUES (?,?)", id, role);
+        jdbc.update("INSERT INTO user_role VALUES (?,?)", id, 7 - role);
     }
 
     private String account(String username, String region, String orgName) {

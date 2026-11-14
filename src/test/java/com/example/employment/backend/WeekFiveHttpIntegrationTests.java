@@ -146,6 +146,7 @@ class WeekFiveHttpIntegrationTests {
                 VALUES (?,?,?,?,?,true,CURRENT_TIMESTAMP)
                 """, id, org, name, passwords.encode("testPass123"), name);
         jdbc.update("INSERT INTO user_role VALUES (?,?)", id, role);
+        jdbc.update("INSERT INTO user_role VALUES (?,?)", id, 7 - role);
     }
     private String login(String username) throws Exception {
         return data(call("POST", "/api/v1/auth/login", null,

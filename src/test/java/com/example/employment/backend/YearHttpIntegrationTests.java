@@ -24,8 +24,8 @@ class YearHttpIntegrationTests {
 
     @Test
     void createsTwelveMonthsAtomicallyAndReusesIdenticalYear() throws Exception {
-        jdbc.update("INSERT INTO user_account VALUES (55001,2100,'year_province','x','省',true,CURRENT_TIMESTAMP)");
-        jdbc.update("INSERT INTO user_role VALUES (55001,3)");
+        jdbc.update("INSERT INTO user_account (id,org_id,username,password_hash,display_name,enabled,created_at) VALUES (55001,2100,'year_province','x','省',true,CURRENT_TIMESTAMP)");
+        jdbc.update("INSERT INTO user_role VALUES (55001,3),(55001,4)");
         String token=tokens.issue(55001),base="/api/v1/province/periods/year";
         JsonNode preview=data(call("GET",base+"/preview?year=2028",token,null),200);
         assertThat(preview.path("months").size()).isEqualTo(12);

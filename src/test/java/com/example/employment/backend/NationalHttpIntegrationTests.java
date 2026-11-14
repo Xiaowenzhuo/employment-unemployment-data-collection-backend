@@ -132,9 +132,9 @@ class NationalHttpIntegrationTests {
         return new Message(bytes,p);
     }
     private void seed() {
-        jdbc.update("INSERT INTO user_account VALUES (54001,2100,'nat_province','x','省',true,CURRENT_TIMESTAMP)");
-        jdbc.update("INSERT INTO user_account VALUES (54002,2101,'nat_city','x','市',true,CURRENT_TIMESTAMP)");
-        jdbc.update("INSERT INTO user_role VALUES (54001,3)");jdbc.update("INSERT INTO user_role VALUES (54002,2)");
+        jdbc.update("INSERT INTO user_account (id,org_id,username,password_hash,display_name,enabled,created_at) VALUES (54001,2100,'nat_province','x','省',true,CURRENT_TIMESTAMP)");
+        jdbc.update("INSERT INTO user_account (id,org_id,username,password_hash,display_name,enabled,created_at) VALUES (54002,2101,'nat_city','x','市',true,CURRENT_TIMESTAMP)");
+        jdbc.update("INSERT INTO user_role VALUES (54001,3),(54001,4),(54002,2),(54002,5)");
         jdbc.update("""
                 INSERT INTO survey_period(code,label,start_at,end_exclusive_at,demo,province_org_id,
                     open_at,close_at,current_version) VALUES

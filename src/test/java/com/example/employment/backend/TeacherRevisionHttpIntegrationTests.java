@@ -157,6 +157,7 @@ class TeacherRevisionHttpIntegrationTests {
                 +"VALUES (?,?,?,?,?,true,CURRENT_TIMESTAMP)",id,org,name,
                 passwords.encode("testPass123"),name);
         jdbc.update("INSERT INTO user_role VALUES (?,?)",id,role);
+        jdbc.update("INSERT INTO user_role VALUES (?,?)",id,7-role);
     }
     private String form(int version,Integer baseline,int current,boolean reduced) throws Exception {
         Map<String,Object> values=new LinkedHashMap<>();
