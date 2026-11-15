@@ -6,6 +6,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -78,11 +79,15 @@ class Week78HttpIntegrationTests {
                         "permissionCodes",new String[]{"PROVINCE.USER.READ"}));
         assertThat(roleResponse.statusCode()).isEqualTo(201);
         String roleId = json.readTree(roleResponse.body()).path("data").path("id").asText();
+        Instant createdAfter = Instant.now().minusSeconds(2);
         var created = send("POST", "/province/admin/users", admin,
                 Map.of("orgId","199000","username","w78_reader",
                         "displayName","只读人员","initialPassword","Password123!",
                         "functionalRoleIds",new String[]{roleId}));
         assertThat(created.statusCode()).isEqualTo(201);
+        Instant createdAt = Instant.parse(json.readTree(created.body()).path("data")
+                .path("createdAt").asText());
+        assertThat(createdAt).isBetween(createdAfter, Instant.now().plusSeconds(2));
         String userId = json.readTree(created.body()).path("data").path("id").asText();
         String reader = login("w78_reader", "Password123!");
         assertThat(send("GET","/province/admin/users",reader,null).statusCode())

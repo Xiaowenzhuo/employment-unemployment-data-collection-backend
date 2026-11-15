@@ -162,7 +162,7 @@ public class AdminUserDao {
     private UserRow user(ResultSet rs) throws SQLException {
         return new UserRow(rs.getLong("id"),rs.getString("username"),
                 rs.getString("display_name"),rs.getBoolean("enabled"),rs.getLong("version"),
-                rs.getTimestamp("created_at").toLocalDateTime(),
+                rs.getObject("created_at", LocalDateTime.class),
                 new OrgRow(rs.getLong("org_id"),rs.getString("name"),
                         rs.getString("org_type"),rs.getString("region_code"),
                         rs.getString("region_name"),(Long)rs.getObject("parent_id"),
