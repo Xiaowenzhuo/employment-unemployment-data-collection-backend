@@ -36,12 +36,17 @@ public class ProvinceDataDao {
                     COALESCE(fv.main_business, f.main_business) AS main_business,
                     COALESCE(fv.contact_name, f.contact_name) AS contact_name,
                     COALESCE(fv.address_code, f.address_code) AS address_code,
+                    CASE WHEN fv.filing_id IS NOT NULL THEN fv.contact_address
+                         ELSE f.contact_address END AS contact_address,
                     COALESCE(fv.postal_code, f.postal_code) AS postal_code,
                     COALESCE(fv.contact_phone, f.contact_phone) AS contact_phone,
                     COALESCE(fv.fax, f.fax) AS fax, COALESCE(fv.email, f.email) AS email,
                     f.id AS current_filing_id,
                     nature.name AS nature_name, industry.name AS industry_name,
-                    address.name AS address_name,
+                    CASE WHEN fv.filing_id IS NOT NULL
+                         THEN COALESCE(fv.contact_address,address.name)
+                         ELSE COALESCE(f.contact_address,address.name)
+                    END AS address_name,
                     (SELECT COUNT(DISTINCT ce.operation_id) FROM report_correction_event ce
                      WHERE ce.report_id=r.id) AS correction_count,
                     (SELECT MAX(ce.occurred_at) FROM report_correction_event ce

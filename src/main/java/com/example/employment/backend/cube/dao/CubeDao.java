@@ -20,7 +20,7 @@ public class CubeDao {
     }
     public List<Map<String,Object>> options(String category) {
         return jdbc.queryForList("SELECT code,parent_code,name FROM filing_option "
-                + "WHERE category=? ORDER BY parent_code,code",category);
+                + "WHERE category=? AND demo=false ORDER BY parent_code,code",category);
     }
     public List<LocalDateTime> periods(long provinceId) {
         return jdbc.query("SELECT start_at FROM survey_period WHERE province_org_id=? "
@@ -29,7 +29,7 @@ public class CubeDao {
     public List<Fact> facts(long provinceId) {
         return jdbc.query("""
                 SELECT f.enterprise_org_id,f.period_code,f.region_code,
-                       c.region_code AS city_code,f.nature_code,f.industry_code,
+                       c.region_code AS city_code,f.nature_parent_code,f.nature_code,f.industry_code,
                        f.industry_parent_code,f.baseline_employment_count,
                        f.period_employment_count,p.start_at
                 FROM dw_fact_employment_month f
@@ -38,12 +38,13 @@ public class CubeDao {
                 WHERE f.province_org_id=? AND f.valid=true AND p.province_org_id=?
                 ORDER BY p.start_at,f.enterprise_org_id
                 """,(rs,i)->new Fact(rs.getLong("enterprise_org_id"),rs.getString("period_code"),
-                rs.getString("region_code"),rs.getString("city_code"),rs.getString("nature_code"),
+                rs.getString("region_code"),rs.getString("city_code"),
+                rs.getString("nature_parent_code"),rs.getString("nature_code"),
                 rs.getString("industry_code"),rs.getString("industry_parent_code"),
                 rs.getLong("baseline_employment_count"),rs.getLong("period_employment_count"),
                 rs.getObject("start_at",LocalDateTime.class)),provinceId,provinceId);
     }
     public record Fact(long enterpriseId,String periodCode,String regionCode,String cityCode,
-            String natureCode,String industryCode,String industryParentCode,long baseline,
+            String natureParentCode,String natureCode,String industryCode,String industryParentCode,long baseline,
             long current,LocalDateTime startAt) { }
 }

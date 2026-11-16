@@ -55,6 +55,14 @@ public class FilingService {
             throw new ConflictException("当前备案状态不可修改资料");
         }
         Profile p = normalize(input);
+        if (existing != null && p.contactAddress() == null && p.addressCode() == null
+                && existing.profile().addressCode() != null) {
+            p = new Profile(p.organizationCode(), p.enterpriseName(), p.natureParentCode(),
+                    p.natureCode(), p.industryParentCode(), p.industryCode(), p.mainBusiness(),
+                    p.contactName(), existing.profile().addressParentCode(),
+                    existing.profile().addressCode(), p.postalCode(), p.contactPhone(),
+                    p.fax(), p.email(), null);
+        }
         validate(p, false);
         if (p.organizationCode() != null &&
                 filings.codeExists(p.organizationCode(), existing == null ? -1 : existing.id())) {
@@ -125,7 +133,7 @@ public class FilingService {
 
     public OptionsData options(UserAccount actor) {
         scopes.enterprise(actor);
-        return new OptionsData(options("NATURE"), options("INDUSTRY"), options("ADDRESS"), true);
+        return new OptionsData(options("NATURE"), options("INDUSTRY"), List.of(), false);
     }
 
     public List<Period> periods(UserAccount actor) {
@@ -282,7 +290,9 @@ public class FilingService {
     }
 
     private List<OptionParent> options(String category) {
-        List<OptionRow> rows = filings.options(category);
+        List<OptionRow> rows = filings.options(category).stream().filter(row -> !row.demo())
+                .map(row -> new OptionRow(publicOptionCode(row.code()),
+                        publicOptionCode(row.parentCode()), row.name(), false)).toList();
         List<OptionParent> result = new ArrayList<>();
         for (OptionRow parent : rows) {
             if (parent.parentCode() == null) {
@@ -304,7 +314,8 @@ public class FilingService {
                 trim(p.enterpriseName()), trim(p.natureParentCode()), trim(p.natureCode()),
                 trim(p.industryParentCode()), trim(p.industryCode()), trim(p.mainBusiness()),
                 trim(p.contactName()), trim(p.addressParentCode()), trim(p.addressCode()),
-                trim(p.postalCode()), trim(p.contactPhone()), trim(p.fax()), trim(p.email()));
+                trim(p.postalCode()), trim(p.contactPhone()), trim(p.fax()), trim(p.email()),
+                trim(p.contactAddress()));
     }
 
     private void validate(Profile p, boolean required) {
@@ -325,8 +336,7 @@ public class FilingService {
                 "natureCode", p.natureCode(), required);
         pair(errors, "INDUSTRY", "industryParentCode", p.industryParentCode(),
                 "industryCode", p.industryCode(), required);
-        pair(errors, "ADDRESS", "addressParentCode", p.addressParentCode(),
-                "addressCode", p.addressCode(), required);
+        length(errors, "contactAddress", p.contactAddress(), 255, required);
         if (!errors.isEmpty()) {
             throw new FieldErrorException(errors);
         }
@@ -339,16 +349,28 @@ public class FilingService {
             if (child != null) errors.put(childField, "请先选择一级选项");
             return;
         }
+        String storedParent = internalParentCode(category, parent);
         boolean parentExists = filings.options(category).stream()
-                .anyMatch(row -> row.code().equals(parent) && row.parentCode() == null);
+                .anyMatch(row -> row.code().equals(storedParent) && row.parentCode() == null
+                        && !row.demo());
         if (!parentExists) {
             errors.put(parentField, "一级选项不存在");
         }
         if (child == null) {
             if (required) errors.put(childField, "必填");
-        } else if (!filings.optionPair(category, parent, child)) {
+        } else if (!filings.optionPair(category, storedParent, child)) {
             errors.put(childField, "二级选项与一级选项不匹配");
         }
+    }
+
+    private static String internalParentCode(String category, String code) {
+        return "NATURE".equals(category) && List.of("400", "500", "900").contains(code)
+                ? "NATURE_GROUP_" + code : code;
+    }
+
+    private static String publicOptionCode(String code) {
+        return code != null && code.startsWith("NATURE_GROUP_")
+                ? code.substring("NATURE_GROUP_".length()) : code;
     }
 
     private static void check(Map<String, String> errors, String field,

@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +46,22 @@ public class ReviewService {
         this.regions = regions;
         this.scopes = scopes;
         this.filings = filings;
+    }
+
+    public Map<String,Object> cityPeriods(UserAccount actor) {
+        Scope city=scope(actor,"CITY");
+        var items=periods.visible(city.provinceId()).stream().map(period -> {
+            Map<String,Object> item=new LinkedHashMap<>();
+            item.put("code",period.code());item.put("label",period.label());
+            item.put("startAt",period.startAt());
+            item.put("endExclusiveAt",period.endExclusiveAt());
+            item.put("openAt",period.openAt());item.put("closeAt",period.closeAt());
+            item.put("currentVersion",period.currentVersion());
+            item.put("windowStatus",period.windowStatus(java.time.Instant.now()));
+            item.put("demo",period.demo());item.put("legacy",period.legacy());
+            return item;
+        }).toList();
+        return Map.of("items",items,"total",items.size());
     }
 
     public ReviewList list(UserAccount actor, String level, String periodCode, String status,

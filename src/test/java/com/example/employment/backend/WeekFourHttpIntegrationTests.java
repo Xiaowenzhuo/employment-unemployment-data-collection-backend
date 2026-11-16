@@ -34,6 +34,12 @@ class WeekFourHttpIntegrationTests {
         String province = login("w4_province");
         String otherProvince = login("w4_other_province");
 
+        JsonNode cityPeriods=data(call("GET", "/api/v1/city/reports/periods",city,null));
+        assertThat(cityPeriods.path("items").size()).isGreaterThanOrEqualTo(2);
+        assertThat(cityPeriods.path("total").asInt()).isEqualTo(cityPeriods.path("items").size());
+        assertThat(call("GET", "/api/v1/city/reports/periods",enterprise,null)
+                .statusCode()).isEqualTo(403);
+
         assertThat(call("GET", "/api/v1/city/reports", null, null).statusCode()).isEqualTo(401);
         assertThat(call("GET", "/api/v1/city/reports", enterprise, null).statusCode()).isEqualTo(403);
         assertThat(call("GET", "/api/v1/city/reports?status=DRAFT", city, null).statusCode())

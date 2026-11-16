@@ -93,9 +93,17 @@ class WeekTwoHttpIntegrationTests {
                 .path("data").path("status").isNull()).isTrue();
         assertThat(body(request("GET", "/api/v1/enterprise/filing", enterprise, null, Map.of()))
                 .path("data").path("canReport").asBoolean()).isFalse();
-        assertThat(body(request("GET", "/api/v1/enterprise/filing/options", enterprise, null, Map.of()))
-                .path("data").path("natures").get(0).path("children").get(0)
-                .path("code").asText()).isEqualTo("DEMO_NATURE_1_1");
+        JsonNode options=body(request("GET", "/api/v1/enterprise/filing/options",
+                enterprise, null, Map.of())).path("data");
+        assertThat(options.path("demo").asBoolean()).isFalse();
+        assertThat(options.path("industries").size()).isEqualTo(20);
+        assertThat(options.path("industries").get(2).path("children").size()).isEqualTo(31);
+        assertThat(options.path("natures").size()).isEqualTo(6);
+        assertThat(options.path("natures").get(0).path("children").get(0)
+                .path("code").asText()).isEqualTo("111");
+        assertThat(options.path("natures").get(3).path("code").asText()).isEqualTo("400");
+        assertThat(options.path("natures").get(3).path("children").get(0)
+                .path("code").asText()).isEqualTo("400");
         assertThat(request("GET", "/api/v1/enterprise/profile", province, null, Map.of())
                 .statusCode()).isEqualTo(403);
         assertThat(request("GET", "/api/v1/province/filings", enterprise, null, Map.of())
@@ -119,12 +127,15 @@ class WeekTwoHttpIntegrationTests {
         assertThat(body(invalidPhone).path("data").path("fieldErrors").path("contactPhone").asText())
                 .isNotBlank();
         var invalidOption = request("PUT", "/api/v1/enterprise/profile", enterprise,
-                profile().replace("DEMO_NATURE_1_1", "DEMO_INDUSTRY_1_1"), Map.of());
+                profile().replace("\"natureCode\":\"111\"", "\"natureCode\":\"35\""), Map.of());
         assertThat(invalidOption.statusCode()).isEqualTo(400);
         assertThat(body(invalidOption).path("data").path("fieldErrors").path("natureCode").asText())
                 .isNotBlank();
         assertThat(request("PUT", "/api/v1/enterprise/profile", enterprise, profile(), Map.of())
                 .statusCode()).isEqualTo(200);
+        assertThat(body(request("GET", "/api/v1/enterprise/profile", enterprise, null,
+                Map.of())).path("data").path("profile").path("contactAddress").asText())
+                .isEqualTo("云南省昆明市五华区演示路1号");
         assertThat(request("PUT", "/api/v1/enterprise/profile", second,
                 "{\"organizationCode\":\"ab1234567\"}", Map.of()).statusCode()).isEqualTo(409);
         assertThat(request("GET", "/api/v1/enterprise/filing/versions/1", second,
@@ -237,6 +248,8 @@ class WeekTwoHttpIntegrationTests {
             assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("组织机构代码");
             assertThat(sheet.getRow(1).getCell(1).getStringCellValue()).isEqualTo("演示企业甲修订");
             assertThat(sheet.getRow(1).getCell(2).getStringCellValue()).contains("演示区县");
+            assertThat(sheet.getRow(1).getCell(7).getStringCellValue())
+                    .isEqualTo("云南省昆明市五华区演示路1号");
             assertThat(sheet.getRow(1).getCell(12).getStringCellValue()).isEqualTo(
                     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
                             .withZone(ZoneId.of("Asia/Shanghai"))
@@ -295,10 +308,11 @@ class WeekTwoHttpIntegrationTests {
     private String profile() {
         return """
                 {"organizationCode":" AB1234567 ","enterpriseName":"演示企业甲",
-                 "natureParentCode":"DEMO_NATURE_1","natureCode":"DEMO_NATURE_1_1",
-                 "industryParentCode":"DEMO_INDUSTRY_1","industryCode":"DEMO_INDUSTRY_1_1",
+                 "natureParentCode":"100","natureCode":"111",
+                 "industryParentCode":"C","industryCode":"35",
                  "mainBusiness":"演示制造业务","contactName":"张三",
-                 "addressParentCode":"DEMO_ADDR_1","addressCode":"DEMO_ADDR_1_1",
+                 "addressParentCode":null,"addressCode":null,
+                 "contactAddress":"云南省昆明市五华区演示路1号",
                  "postalCode":"650000","contactPhone":"0871-12345678",
                  "fax":"0871-12345678","email":"demo@example.com"}
                 """;

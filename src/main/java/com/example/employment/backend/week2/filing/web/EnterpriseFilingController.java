@@ -40,7 +40,7 @@ public class EnterpriseFilingController {
         StrictBody.only(body, "organizationCode", "enterpriseName", "natureParentCode",
                 "natureCode", "industryParentCode", "industryCode", "mainBusiness",
                 "contactName", "addressParentCode", "addressCode", "postalCode",
-                "contactPhone", "fax", "email");
+                "contactPhone", "fax", "email", "contactAddress");
         Profile input = new Profile(StrictBody.string(body, "organizationCode"),
                 StrictBody.string(body, "enterpriseName"),
                 StrictBody.string(body, "natureParentCode"), StrictBody.string(body, "natureCode"),
@@ -48,7 +48,8 @@ public class EnterpriseFilingController {
                 StrictBody.string(body, "mainBusiness"), StrictBody.string(body, "contactName"),
                 StrictBody.string(body, "addressParentCode"), StrictBody.string(body, "addressCode"),
                 StrictBody.string(body, "postalCode"), StrictBody.string(body, "contactPhone"),
-                StrictBody.string(body, "fax"), StrictBody.string(body, "email"));
+                StrictBody.string(body, "fax"), StrictBody.string(body, "email"),
+                StrictBody.string(body, "contactAddress"));
         return ApiResponse.ok(filings.save(user(auth), input));
     }
 

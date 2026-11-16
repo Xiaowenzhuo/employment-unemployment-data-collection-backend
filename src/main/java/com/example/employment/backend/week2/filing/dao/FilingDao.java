@@ -22,7 +22,8 @@ public class FilingDao {
     private static final String PROFILE_COLUMNS = """
             organization_code, enterprise_name, nature_parent_code, nature_code,
             industry_parent_code, industry_code, main_business, contact_name,
-            address_parent_code, address_code, postal_code, contact_phone, fax, email
+            address_parent_code, address_code, postal_code, contact_phone, fax, email,
+            contact_address
             """;
     private final JdbcTemplate jdbc;
     private final NamedParameterJdbcTemplate named;
@@ -58,11 +59,11 @@ public class FilingDao {
         jdbc.update("""
                 INSERT INTO enterprise_filing (id, org_id, status, current_version,
                 """ + PROFILE_COLUMNS + ", updated_at) VALUES (?, ?, 'DRAFT', 0, " +
-                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 id, orgId, p.organizationCode(), p.enterpriseName(), p.natureParentCode(),
                 p.natureCode(), p.industryParentCode(), p.industryCode(), p.mainBusiness(),
                 p.contactName(), p.addressParentCode(), p.addressCode(), p.postalCode(),
-                p.contactPhone(), p.fax(), p.email(), now);
+                p.contactPhone(), p.fax(), p.email(), p.contactAddress(), now);
     }
 
     public void updateDraft(long id, Profile p, LocalDateTime now) {
@@ -70,11 +71,12 @@ public class FilingDao {
                 UPDATE enterprise_filing SET organization_code=?, enterprise_name=?,
                 nature_parent_code=?, nature_code=?, industry_parent_code=?, industry_code=?,
                 main_business=?, contact_name=?, address_parent_code=?, address_code=?,
-                postal_code=?, contact_phone=?, fax=?, email=?, updated_at=? WHERE id=?
+                postal_code=?, contact_phone=?, fax=?, email=?, contact_address=?,
+                updated_at=? WHERE id=?
                 """, p.organizationCode(), p.enterpriseName(), p.natureParentCode(),
                 p.natureCode(), p.industryParentCode(), p.industryCode(), p.mainBusiness(),
                 p.contactName(), p.addressParentCode(), p.addressCode(), p.postalCode(),
-                p.contactPhone(), p.fax(), p.email(), now, id);
+                p.contactPhone(), p.fax(), p.email(), p.contactAddress(), now, id);
     }
 
     public int setPending(long id, String oldStatus, int oldVersion, LocalDateTime now) {
@@ -88,11 +90,11 @@ public class FilingDao {
         jdbc.update("""
                 INSERT INTO filing_version (filing_id, version, result,
                 """ + PROFILE_COLUMNS + ", submitted_at, submitted_by) VALUES (?, ?, 'PENDING', " +
-                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 id, version, p.organizationCode(), p.enterpriseName(), p.natureParentCode(),
                 p.natureCode(), p.industryParentCode(), p.industryCode(), p.mainBusiness(),
                 p.contactName(), p.addressParentCode(), p.addressCode(), p.postalCode(),
-                p.contactPhone(), p.fax(), p.email(), now, actorId);
+                p.contactPhone(), p.fax(), p.email(), p.contactAddress(), now, actorId);
     }
 
     public Optional<FilingVersion> version(long id, int version) {
@@ -132,6 +134,7 @@ public class FilingDao {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM filing_option p JOIN filing_option c ON c.parent_code=p.code
                 WHERE p.category=? AND c.category=? AND p.code=? AND c.code=?
+                  AND p.demo=false AND c.demo=false
                 """, Integer.class, category, category, parent, child);
         return count != null && count > 0;
     }
@@ -181,6 +184,7 @@ public class FilingDao {
                        v.nature_code, v.industry_parent_code, v.industry_code,
                        v.main_business, v.contact_name, v.address_parent_code,
                        v.address_code, v.postal_code, v.contact_phone, v.fax, v.email,
+                       v.contact_address,
                        v.result, v.submitted_at, v.reviewed_at, v.reason
                 FROM enterprise_filing f
                 JOIN org_unit o ON o.id=f.org_id
@@ -250,7 +254,7 @@ public class FilingDao {
                 rs.getString("main_business"), rs.getString("contact_name"),
                 rs.getString("address_parent_code"), rs.getString("address_code"),
                 rs.getString("postal_code"), rs.getString("contact_phone"),
-                rs.getString("fax"), rs.getString("email"));
+                rs.getString("fax"), rs.getString("email"), rs.getString("contact_address"));
     }
 
     private Instant instant(ResultSet rs, String field) throws SQLException {

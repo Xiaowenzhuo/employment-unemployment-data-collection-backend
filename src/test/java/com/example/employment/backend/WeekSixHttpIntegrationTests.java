@@ -74,6 +74,9 @@ class WeekSixHttpIntegrationTests {
         String cubeBase="/api/v1/province/analysis/cube";
         JsonNode metadata=data(call("GET",cubeBase+"/metadata",province,null));
         assertThat(metadata.path("members").path("month").size()).isEqualTo(3);
+        assertThat(metadata.path("members").path("natureGroup").size()).isEqualTo(7);
+        assertThat(metadata.path("members").path("industryGroup").size()).isEqualTo(21);
+        assertThat(metadata.path("maxAxisMembers").asInt()).isEqualTo(40);
         assertThat(metadata.path("maxCells").asInt()).isEqualTo(1800);
         assertThat(call("GET",cubeBase+"/metadata",city,null).statusCode()).isEqualTo(403);
         String cubeBody="""
@@ -81,6 +84,7 @@ class WeekSixHttpIntegrationTests {
                 """;
         JsonNode cube=data(call("POST",cubeBase+"/query",province,cubeBody));
         assertThat(cube.path("cells").size()).isEqualTo(2);
+        assertThat(cube.path("members").get(1).size()).isEqualTo(21);
         assertThat(cube.path("cells").get(0).path("periodCount").asInt()).isEqualTo(1);
         assertThat(data(call("POST",cubeBase+"/query",province,"""
                 {"axes":["city","industryGroup","month"],"filters":{"month":["2026-03"]}}
@@ -88,14 +92,14 @@ class WeekSixHttpIntegrationTests {
         JsonNode cell=data(call("POST",cubeBase+"/cell-detail",province,"""
                 {"axes":["city","industryGroup","month"],
                  "filters":{"month":["2026-01"]},
-                 "coordinates":["W6_C1","DEMO_INDUSTRY_1","2026-01"]}
+                 "coordinates":["W6_C1","UNCLASSIFIED","2026-01"]}
                 """));
         assertThat(cell.path("metrics").path("baseline").asInt()).isEqualTo(100);
         assertThat(cell.path("metrics").path("current").asInt()).isEqualTo(80);
         assertThat(cell.path("metrics").path("rate").asDouble()).isEqualTo(-20.0);
         assertThat(data(call("POST",cubeBase+"/cell-detail",province,"""
                 {"axes":["city","industryGroup","month"],"filters":{},
-                 "coordinates":["W6_C1","DEMO_INDUSTRY_1","2026-03"]}
+                 "coordinates":["W6_C1","UNCLASSIFIED","2026-03"]}
                 """)).path("metrics").path("baseline").isNull()).isTrue();
         assertThat(call("POST",cubeBase+"/query",province,
                 "{\"axes\":[\"city\",\"county\",\"month\"],\"filters\":{}}")

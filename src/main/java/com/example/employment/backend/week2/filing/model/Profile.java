@@ -4,5 +4,5 @@ public record Profile(String organizationCode, String enterpriseName,
         String natureParentCode, String natureCode, String industryParentCode,
         String industryCode, String mainBusiness, String contactName,
         String addressParentCode, String addressCode, String postalCode,
-        String contactPhone, String fax, String email) {
+        String contactPhone, String fax, String email, String contactAddress) {
 }

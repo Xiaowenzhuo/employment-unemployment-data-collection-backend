@@ -22,11 +22,11 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class CubeService {
-    private static final int MAX_CELLS=1800,MAX_AXIS=24;
+    private static final int MAX_CELLS=1800,MAX_AXIS=40;
     private static final long MAX_SAFE=9007199254740991L;
     private static final ZoneId BEIJING=ZoneId.of("Asia/Shanghai");
     private static final List<String> LEVELS=List.of("province","city","county",
-            "industryGroup","industry","nature","year","quarter","month");
+            "industryGroup","industry","natureGroup","nature","year","quarter","month");
     private final CubeRepository cube;
     private final ScopeService scopes;
     private final WarehouseSyncService sync;
@@ -50,12 +50,14 @@ public class CubeService {
             put(values,parent==null?"industryGroup":"industry",code,row.get("name").toString(),parent);
         }
         for(Map<String,Object> row:cube.options("NATURE")) {
-            if(row.get("parent_code")!=null)
-                put(values,"nature",row.get("code").toString(),row.get("name").toString(),null);
+            String parent=(String)row.get("parent_code");
+            put(values,parent==null?"natureGroup":"nature",publicNatureCode(row.get("code").toString()),
+                    row.get("name").toString(),publicNatureCode(parent));
         }
         put(values,"industryGroup","UNCLASSIFIED","未分类",null);
         put(values,"industry","UNCLASSIFIED","未分类","UNCLASSIFIED");
-        put(values,"nature","UNCLASSIFIED","未分类",null);
+        put(values,"natureGroup","UNCLASSIFIED","未分类",null);
+        put(values,"nature","UNCLASSIFIED","未分类","UNCLASSIFIED");
         for(var time:cube.periods(province.id())) {
             YearMonth month=month(time);
             String y=Integer.toString(month.getYear()),q=y+"-Q"+((month.getMonthValue()-1)/3+1);
@@ -71,6 +73,10 @@ public class CubeService {
             String id,String label,String parent) {
         data.get(level).putIfAbsent(id,new Member(id,label,parent));
     }
+    private static String publicNatureCode(String code) {
+        return code!=null && code.startsWith("NATURE_GROUP_")
+                ? code.substring("NATURE_GROUP_".length()):code;
+    }
     public QueryResult query(UserAccount actor,Map<String,Object> body) {
         Request request=parse(body,false,metadata(actor));
         List<Row> rows=filtered(actor,request);
@@ -80,8 +86,12 @@ public class CubeService {
         for(String axis:request.axes()) {
             Set<String> used=new HashSet<>();
             rows.forEach(row->used.add(row.ids().get(axis)));
+            boolean allIndustryGroups="industryGroup".equals(axis)
+                    && request.filters().getOrDefault("industryGroup",List.of()).isEmpty()
+                    && request.filters().getOrDefault("industry",List.of()).isEmpty();
             List<Member> members=request.metadata().members().get(axis).stream()
-                    .filter(member->used.contains(member.id())).toList();
+                    .filter(member->used.contains(member.id()) || allIndustryGroups
+                            && !"UNCLASSIFIED".equals(member.id())).toList();
             if(members.size()>MAX_AXIS || combinations*members.size()>MAX_CELLS) throw limit();
             combinations*=members.size();
             axes.add(members);
@@ -141,12 +151,14 @@ public class CubeService {
         String industry=fact.industryCode();
         Member industryMember=industry==null?null:metadata.members().get("industry").stream()
                 .filter(member->member.id().equals(industry)).findFirst().orElse(null);
-        ids.put("industryGroup",fact.industryParentCode()!=null?fact.industryParentCode()
-                :industryMember!=null?industryMember.parentId():"UNCLASSIFIED");
+        String industryParent=industryMember==null?null:industryMember.parentId();
+        ids.put("industryGroup",industryParent==null?"UNCLASSIFIED":industryParent);
         ids.put("industry",industryMember==null?"UNCLASSIFIED":industry);
         String nature=fact.natureCode();
-        ids.put("nature",nature!=null && metadata.members().get("nature").stream()
-                .anyMatch(member->member.id().equals(nature))?nature:"UNCLASSIFIED");
+        Member natureMember=nature==null?null:metadata.members().get("nature").stream()
+                .filter(member->member.id().equals(nature)).findFirst().orElse(null);
+        ids.put("natureGroup",natureMember==null?"UNCLASSIFIED":natureMember.parentId());
+        ids.put("nature",natureMember==null?"UNCLASSIFIED":nature);
         YearMonth month=month(fact.startAt());
         ids.put("year",Integer.toString(month.getYear()));
         ids.put("quarter",month.getYear()+"-Q"+((month.getMonthValue()-1)/3+1));
@@ -206,7 +218,7 @@ public class CubeService {
     private static CubeException limit() {
         return new CubeException(HttpStatus.UNPROCESSABLE_CONTENT,"CUBE_LIMIT_EXCEEDED",
                 "维度组合过多，请缩小筛选范围或选择更高汇总层级",
-                Map.of("axes","每轴最多 24 个成员，组合数不超过 1800"));
+                Map.of("axes","每轴最多 40 个成员，组合数不超过 1800"));
     }
     private static class Accumulator {
         long baseline,current,reduction;

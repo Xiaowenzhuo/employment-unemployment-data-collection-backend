@@ -46,7 +46,8 @@ public class FilingExportService {
                 String[] values = {
                         p.organizationCode(), p.enterpriseName(), region,
                         filings.optionName(p.natureCode()), filings.optionName(p.industryCode()),
-                        p.mainBusiness(), p.contactName(), filings.optionName(p.addressParentCode())
+                        p.mainBusiness(), p.contactName(), p.contactAddress()!=null
+                                ? p.contactAddress() : filings.optionName(p.addressParentCode())
                                 + "/" + filings.optionName(p.addressCode()),
                         p.postalCode(), p.contactPhone(), p.fax(), p.email(),
                         TIME.format(item.reviewedAt())
