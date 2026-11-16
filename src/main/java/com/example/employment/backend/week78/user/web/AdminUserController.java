@@ -32,21 +32,23 @@ public class AdminUserController {
     public ApiResponse<?> organizations(Authentication auth,
             @RequestParam(required = false) String orgType,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String parentOrgId,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(users.organizations(actor(auth),orgType,keyword,page,size));
+        return ApiResponse.ok(users.organizations(actor(auth),orgType,keyword,parentOrgId,page,size));
     }
 
     @GetMapping("/users")
     public ApiResponse<?> list(Authentication auth,
             @RequestParam(required = false) String orgId,
+            @RequestParam(required = false) String cityOrgId,
             @RequestParam(required = false) String roleCode,
             @RequestParam(required = false) Boolean enabled,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String functionalRoleId,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size) {
-        return ApiResponse.ok(users.list(actor(auth),orgId,roleCode,enabled,keyword,
+        return ApiResponse.ok(users.list(actor(auth),orgId,cityOrgId,roleCode,enabled,keyword,
                 functionalRoleId,page,size));
     }
 

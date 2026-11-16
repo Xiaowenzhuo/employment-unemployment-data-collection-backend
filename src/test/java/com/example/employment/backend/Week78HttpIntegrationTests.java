@@ -184,6 +184,12 @@ class Week78HttpIntegrationTests {
                         "displayName","报表提交人","initialPassword","Password123!",
                         "functionalRoleIds",new String[]{"6"}));
         assertThat(submitter.statusCode()).isEqualTo(201);
+        assertThat(call("GET","/province/admin/organizations?orgType=CITY&parentOrgId=199000",
+                admin,null).path("data").path("total").asInt()).isEqualTo(1);
+        assertThat(call("GET","/province/admin/users?roleCode=ENTERPRISE&cityOrgId=199001",
+                admin,null).path("data").path("total").asInt()).isEqualTo(1);
+        assertThat(send("GET","/province/admin/users?cityOrgId=199002",admin,null)
+                .statusCode()).isEqualTo(404);
         String submitterId=json.readTree(submitter.body()).path("data").path("id").asText();
         jdbc.update("""
                 INSERT INTO enterprise_report (id,org_id,period_code,status,current_version,

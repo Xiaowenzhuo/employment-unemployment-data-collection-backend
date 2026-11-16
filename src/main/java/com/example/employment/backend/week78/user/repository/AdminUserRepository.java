@@ -17,20 +17,24 @@ public class AdminUserRepository {
         return dao.organization(id, provinceId);
     }
     public List<OrgRow> organizations(long provinceId, String type, String keyword,
-            int page, int size) { return dao.organizations(provinceId, type, keyword, page, size); }
-    public long organizationCount(long provinceId, String type, String keyword) {
-        return dao.organizationCount(provinceId, type, keyword);
+            Long parentOrgId, int page, int size) {
+        return dao.organizations(provinceId, type, keyword, parentOrgId, page, size);
+    }
+    public long organizationCount(long provinceId, String type, String keyword, Long parentOrgId) {
+        return dao.organizationCount(provinceId, type, keyword, parentOrgId);
     }
     public Optional<UserRow> user(long id, long provinceId, boolean lock) {
         return dao.user(id, provinceId, lock);
     }
-    public List<UserRow> users(long provinceId, Long orgId, String roleCode, Boolean enabled,
+    public List<UserRow> users(long provinceId, Long orgId, Long cityOrgId,
+            String roleCode, Boolean enabled,
             String keyword, Long roleId, int page, int size) {
-        return dao.users(provinceId, orgId, roleCode, enabled, keyword, roleId, page, size);
+        return dao.users(provinceId, orgId, cityOrgId, roleCode, enabled, keyword, roleId, page, size);
     }
-    public long userCount(long provinceId, Long orgId, String roleCode, Boolean enabled,
+    public long userCount(long provinceId, Long orgId, Long cityOrgId,
+            String roleCode, Boolean enabled,
             String keyword, Long roleId) {
-        return dao.userCount(provinceId, orgId, roleCode, enabled, keyword, roleId);
+        return dao.userCount(provinceId, orgId, cityOrgId, roleCode, enabled, keyword, roleId);
     }
     public boolean usernameExists(String name) { return dao.usernameExists(name); }
     public long nextId() { return dao.nextId(); }

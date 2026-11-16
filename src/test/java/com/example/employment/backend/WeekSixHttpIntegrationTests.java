@@ -71,6 +71,36 @@ class WeekSixHttpIntegrationTests {
                 .isTrue();
         assertThat(call("GET",comparePath,otherProvince,null).statusCode()).isEqualTo(400);
 
+        String cubeBase="/api/v1/province/analysis/cube";
+        JsonNode metadata=data(call("GET",cubeBase+"/metadata",province,null));
+        assertThat(metadata.path("members").path("month").size()).isEqualTo(3);
+        assertThat(metadata.path("maxCells").asInt()).isEqualTo(1800);
+        assertThat(call("GET",cubeBase+"/metadata",city,null).statusCode()).isEqualTo(403);
+        String cubeBody="""
+                {"axes":["city","industryGroup","month"],"filters":{"month":["2026-01"]}}
+                """;
+        JsonNode cube=data(call("POST",cubeBase+"/query",province,cubeBody));
+        assertThat(cube.path("cells").size()).isEqualTo(2);
+        assertThat(cube.path("cells").get(0).path("periodCount").asInt()).isEqualTo(1);
+        assertThat(data(call("POST",cubeBase+"/query",province,"""
+                {"axes":["city","industryGroup","month"],"filters":{"month":["2026-03"]}}
+                """)).path("cells").size()).isZero();
+        JsonNode cell=data(call("POST",cubeBase+"/cell-detail",province,"""
+                {"axes":["city","industryGroup","month"],
+                 "filters":{"month":["2026-01"]},
+                 "coordinates":["W6_C1","DEMO_INDUSTRY_1","2026-01"]}
+                """));
+        assertThat(cell.path("metrics").path("baseline").asInt()).isEqualTo(100);
+        assertThat(cell.path("metrics").path("current").asInt()).isEqualTo(80);
+        assertThat(cell.path("metrics").path("rate").asDouble()).isEqualTo(-20.0);
+        assertThat(data(call("POST",cubeBase+"/cell-detail",province,"""
+                {"axes":["city","industryGroup","month"],"filters":{},
+                 "coordinates":["W6_C1","DEMO_INDUSTRY_1","2026-03"]}
+                """)).path("metrics").path("baseline").isNull()).isTrue();
+        assertThat(call("POST",cubeBase+"/query",province,
+                "{\"axes\":[\"city\",\"county\",\"month\"],\"filters\":{}}")
+                .statusCode()).isEqualTo(400);
+
         JsonNode revised = data(call("POST","/api/v1/province/reports/96301/corrections",
                 province,"{\"expectedVersion\":4,\"submissionVersion\":1,\"reason\":\"核对\",\"changes\":{\"periodEmploymentCount\":70}}"));
         assertThat(revised.path("currentVersion").asInt()).isEqualTo(5);
@@ -158,6 +188,40 @@ class WeekSixHttpIntegrationTests {
         assertThat(boundary.path("content").asText().length()).isEqualTo(2000);
         data(call("DELETE","/api/v1/province/notices/"+boundary.path("noticeId").asText()
                 +"?expectedVersion=1",province,null));
+
+        String reminderBase="/api/v1/province/notices/report-reminders";
+        JsonNode preview=data(call("POST",reminderBase+"/preview",province,
+                "{\"periodCode\":\"W6_P3\",\"audience\":\"BOTH\"}"));
+        assertThat(preview.path("cityCount").asInt()).isEqualTo(2);
+        assertThat(preview.path("enterpriseCount").asInt()).isEqualTo(2);
+        String sendBody=json.writeValueAsString(Map.of("previewId",preview.path("previewId").asText(),
+                "title","催报","content","请填报"));
+        JsonNode reminder=data(call("POST",reminderBase,province,sendBody));
+        String reminderId=reminder.path("noticeId").asText();
+        assertThat(data(call("POST",reminderBase,province,sendBody)).path("noticeId").asText())
+                .isEqualTo(reminderId);
+        assertThat(call("POST",reminderBase,province,json.writeValueAsString(Map.of(
+                "previewId",preview.path("previewId").asText(),"title","改标题","content","请填报")))
+                .statusCode()).isEqualTo(409);
+        assertThat(data(call("GET","/api/v1/notices/"+reminderId,enterprise,null))
+                .path("content").asText()).isEqualTo("请填报");
+        assertThat(call("GET","/api/v1/notices/"+reminderId,otherProvince,null)
+                .statusCode()).isEqualTo(404);
+        JsonNode stale=data(call("POST",reminderBase+"/preview",province,
+                "{\"periodCode\":\"W6_P3\",\"audience\":\"BOTH\"}"));
+        report(96303,96300,"W6_P3",100,100,96310,true);
+        assertThat(call("POST",reminderBase,province,json.writeValueAsString(Map.of(
+                "previewId",stale.path("previewId").asText(),"title","旧名单","content","请填报")))
+                .statusCode()).isEqualTo(409);
+        JsonNode cityOnly=data(call("POST",reminderBase+"/preview",province,
+                "{\"periodCode\":\"W6_P3\",\"audience\":\"CITIES\"}"));
+        assertThat(cityOnly.path("cityCount").asInt()).isEqualTo(1);
+        assertThat(cityOnly.path("enterpriseCount").asInt()).isZero();
+        String cityNotice=data(call("POST",reminderBase,province,json.writeValueAsString(Map.of(
+                "previewId",cityOnly.path("previewId").asText(),"title","市级催报","content","请填报"))))
+                .path("noticeId").asText();
+        assertThat(call("GET","/api/v1/notices/"+cityNotice,enterprise,null)
+                .statusCode()).isEqualTo(404);
     }
 
     private void seed() {

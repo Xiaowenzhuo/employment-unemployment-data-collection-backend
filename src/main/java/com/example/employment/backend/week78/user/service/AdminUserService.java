@@ -41,17 +41,22 @@ public class AdminUserService {
     }
 
     public OrgPage organizations(UserAccount actor, String type, String keyword,
+            String parentOrgId,
             Integer page, Integer size) {
         long provinceId = scopes.province(actor).id();
         if (type != null) checkLevel(type);
         checkKeyword(keyword, 120);
+        Long parent = parentOrgId == null ? null : AdminInputs.id(parentOrgId, "parentOrgId");
+        if (parent != null && users.organization(parent, provinceId).isEmpty())
+            throw new NotFoundException();
         int p = AdminInputs.page(page), s = AdminInputs.size(size);
-        return new OrgPage(users.organizations(provinceId, type, keyword, p, s).stream()
+        return new OrgPage(users.organizations(provinceId, type, keyword, parent, p, s).stream()
                 .map(this::orgView).toList(), p, s,
-                users.organizationCount(provinceId, type, keyword));
+                users.organizationCount(provinceId, type, keyword, parent));
     }
 
-    public UserPage list(UserAccount actor, String orgId, String roleCode, Boolean enabled,
+    public UserPage list(UserAccount actor, String orgId, String cityOrgId,
+            String roleCode, Boolean enabled,
             String keyword, String functionalRoleId, Integer page, Integer size) {
         long provinceId = scopes.province(actor).id();
         if (roleCode != null) checkLevel(roleCode);
@@ -60,13 +65,19 @@ public class AdminUserService {
         if (organization != null && users.organization(organization, provinceId).isEmpty()) {
             throw new NotFoundException();
         }
+        Long city = cityOrgId == null ? null : AdminInputs.id(cityOrgId, "cityOrgId");
+        if (city != null) {
+            OrgRow row = users.organization(city, provinceId).orElseThrow(NotFoundException::new);
+            if (!"CITY".equals(row.type()) || !Long.valueOf(provinceId).equals(row.parentId()))
+                throw new NotFoundException();
+        }
         Long role = functionalRoleId == null ? null
                 : AdminInputs.id(functionalRoleId, "functionalRoleId");
         if (role != null) roles.detail(actor, role);
         int p = AdminInputs.page(page), s = AdminInputs.size(size);
-        return new UserPage(users.users(provinceId, organization, roleCode, enabled,
+        return new UserPage(users.users(provinceId, organization, city, roleCode, enabled,
                 keyword, role, p, s).stream().map(this::view).toList(), p, s,
-                users.userCount(provinceId, organization, roleCode, enabled, keyword, role));
+                users.userCount(provinceId, organization, city, roleCode, enabled, keyword, role));
     }
 
     public UserView detail(UserAccount actor, long id) {

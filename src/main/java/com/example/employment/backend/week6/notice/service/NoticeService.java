@@ -33,10 +33,10 @@ public class NoticeService {
         if (page < 0 || (long)page * size > Integer.MAX_VALUE)
             throw field("page", "页码不合法");
         if (size < 1 || size > 100) throw field("size", "每页应为1至100条");
-        return new NoticePage(notices.list(scope.provinceId(),scope.cityId(),actor.id(),
+        return new NoticePage(notices.list(scope.provinceId(),scope.cityId(),actor.id(),actor.orgId(),
                 scope.role(),size,page*size).stream()
                 .map(row -> summary(row,canEdit(row,actor,scope))).toList(),
-                notices.count(scope.provinceId(),scope.cityId(),actor.id(),scope.role()),page,size);
+                notices.count(scope.provinceId(),scope.cityId(),actor.id(),actor.orgId(),scope.role()),page,size);
     }
     public NoticeDetail detail(UserAccount actor, String rawId) {
         NoticeScope scope = scope(actor);
@@ -152,7 +152,9 @@ public class NoticeService {
         if (child.parentId()==null) throw new ForbiddenException();
         return regions.org(child.parentId()).orElseThrow(ForbiddenException::new);
     }
-    private static boolean visible(NoticeRow row,UserAccount actor,NoticeScope scope) {
+    private boolean visible(NoticeRow row,UserAccount actor,NoticeScope scope) {
+        if(row.targeted()) return "PROVINCE".equals(scope.role())
+                || notices.recipient(row.id(),actor.orgId());
         return "PROVINCE".equals(row.publisherLevel()) ||
                 ("CITY".equals(row.publisherLevel()) && scope.cityId()!=null
                  && scope.cityId().equals(row.cityOrgId())

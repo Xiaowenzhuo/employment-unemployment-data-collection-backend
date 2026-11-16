@@ -28,10 +28,10 @@ public class AdminUserDao {
                 .stream().findFirst();
     }
 
-    public List<OrgRow> organizations(long provinceId, String type, String keyword,
+    public List<OrgRow> organizations(long provinceId, String type, String keyword, Long parentOrgId,
             int page, int size) {
         List<Object> args = new ArrayList<>();
-        String where = organizationFilter(provinceId, type, keyword, args);
+        String where = organizationFilter(provinceId, type, keyword, parentOrgId, args);
         args.add(size);
         args.add((long) page * size);
         return jdbc.query("""
@@ -39,23 +39,23 @@ public class AdminUserDao {
                        o.parent_id,o.enabled
                 FROM org_unit o JOIN region r ON r.code=o.region_code
                 LEFT JOIN org_unit parent ON parent.id=o.parent_id
-                """ + where + """
+                """ + where + " " + """
                 ORDER BY CASE o.org_type WHEN 'PROVINCE' THEN 0 WHEN 'CITY' THEN 1 ELSE 2 END,
                          o.region_code,o.name,o.id LIMIT ? OFFSET ?
                 """, (rs, row) -> org(rs), args.toArray());
     }
 
-    public long organizationCount(long provinceId, String type, String keyword) {
+    public long organizationCount(long provinceId, String type, String keyword, Long parentOrgId) {
         List<Object> args = new ArrayList<>();
         Long count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM org_unit o
                 LEFT JOIN org_unit parent ON parent.id=o.parent_id
-                """ + organizationFilter(provinceId, type, keyword, args),
+                """ + organizationFilter(provinceId, type, keyword, parentOrgId, args),
                 Long.class, args.toArray());
         return count == null ? 0 : count;
     }
 
-    private String organizationFilter(long provinceId, String type, String keyword,
+    private String organizationFilter(long provinceId, String type, String keyword, Long parentOrgId,
             List<Object> args) {
         StringBuilder where = new StringBuilder("""
                 WHERE o.enabled=true AND (o.id=? OR o.parent_id=? OR parent.parent_id=?)
@@ -66,6 +66,10 @@ public class AdminUserDao {
         if (type != null) {
             where.append(" AND o.org_type=?");
             args.add(type);
+        }
+        if (parentOrgId != null) {
+            where.append(" AND o.parent_id=?");
+            args.add(parentOrgId);
         }
         if (keyword != null && !keyword.isBlank()) {
             where.append(" AND o.name LIKE ?");
@@ -89,10 +93,11 @@ public class AdminUserDao {
                 .stream().findFirst();
     }
 
-    public List<UserRow> users(long provinceId, Long orgId, String roleCode, Boolean enabled,
+    public List<UserRow> users(long provinceId, Long orgId, Long cityOrgId,
+            String roleCode, Boolean enabled,
             String keyword, Long functionalRoleId, int page, int size) {
         List<Object> args = new ArrayList<>();
-        String where = userFilter(provinceId, orgId, roleCode, enabled, keyword,
+        String where = userFilter(provinceId, orgId, cityOrgId, roleCode, enabled, keyword,
                 functionalRoleId, args);
         args.add(size);
         args.add((long) page * size);
@@ -107,18 +112,20 @@ public class AdminUserDao {
                 (rs, row) -> user(rs), args.toArray());
     }
 
-    public long userCount(long provinceId, Long orgId, String roleCode, Boolean enabled,
+    public long userCount(long provinceId, Long orgId, Long cityOrgId,
+            String roleCode, Boolean enabled,
             String keyword, Long functionalRoleId) {
         List<Object> args = new ArrayList<>();
         Long count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM user_account u JOIN org_unit o ON o.id=u.org_id
                 LEFT JOIN org_unit parent ON parent.id=o.parent_id
-                """ + userFilter(provinceId, orgId, roleCode, enabled, keyword,
+                """ + userFilter(provinceId, orgId, cityOrgId, roleCode, enabled, keyword,
                 functionalRoleId, args), Long.class, args.toArray());
         return count == null ? 0 : count;
     }
 
-    private String userFilter(long provinceId, Long orgId, String roleCode, Boolean enabled,
+    private String userFilter(long provinceId, Long orgId, Long cityOrgId,
+            String roleCode, Boolean enabled,
             String keyword, Long functionalRoleId, List<Object> args) {
         StringBuilder where = new StringBuilder("""
                 WHERE u.deleted_at IS NULL
@@ -130,6 +137,10 @@ public class AdminUserDao {
         if (orgId != null) {
             where.append(" AND o.id=?");
             args.add(orgId);
+        }
+        if (cityOrgId != null) {
+            where.append(" AND o.org_type='ENTERPRISE' AND o.parent_id=?");
+            args.add(cityOrgId);
         }
         if (roleCode != null) {
             where.append(" AND o.org_type=?");

@@ -13,11 +13,12 @@ public class NoticeRepository {
     public NoticeRepository(NoticeDao dao) { this.dao = dao; }
     public long nextNoticeId() { return dao.nextId("province_notice"); }
     public long nextEventId() { return dao.nextId("province_notice_event"); }
-    public List<NoticeRow> list(long province, Long city, long user, String role,
-            int size, int offset) { return dao.list(province,city,user,role,size,offset); }
-    public long count(long province, Long city, long user, String role) {
-        return dao.count(province,city,user,role);
+    public List<NoticeRow> list(long province, Long city, long user, long orgId, String role,
+            int size, int offset) { return dao.list(province,city,user,orgId,role,size,offset); }
+    public long count(long province, Long city, long user, long orgId, String role) {
+        return dao.count(province,city,user,orgId,role);
     }
+    public boolean recipient(long notice,long orgId) { return dao.recipient(notice,orgId); }
     public Optional<NoticeRow> find(long id, long province, boolean deleted, boolean lock) {
         return dao.find(id,province,deleted,lock);
     }

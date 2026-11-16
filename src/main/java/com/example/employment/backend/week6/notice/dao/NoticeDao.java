@@ -21,23 +21,29 @@ public class NoticeDao {
         jdbc.update("UPDATE id_allocator SET next_id=? WHERE entity_name=?", id + 1, entity);
         return id;
     }
-    public List<NoticeRow> list(long provinceId, Long cityId, long userId,
+    public List<NoticeRow> list(long provinceId, Long cityId, long userId, long orgId,
             String role, int size, int offset) {
         return jdbc.query("""
                 SELECT * FROM province_notice WHERE province_org_id=? AND deleted=false
-                  AND (publisher_level='PROVINCE' OR
+                  AND ((targeted=false AND (publisher_level='PROVINCE' OR
                        (publisher_level='CITY' AND city_org_id=?
-                        AND (?='ENTERPRISE' OR publisher_user_id=?)))
+                        AND (?='ENTERPRISE' OR publisher_user_id=?))))
+                    OR (targeted=true AND (?='PROVINCE' OR EXISTS
+                        (SELECT 1 FROM notice_recipient nr
+                         WHERE nr.notice_id=province_notice.id AND nr.org_id=?))))
                 ORDER BY published_at DESC, id DESC LIMIT ? OFFSET ?
-                """, this::row, provinceId, cityId, role, userId, size, offset);
+                """, this::row, provinceId, cityId, role, userId, role, orgId, size, offset);
     }
-    public long count(long provinceId, Long cityId, long userId, String role) {
+    public long count(long provinceId, Long cityId, long userId, long orgId, String role) {
         Long count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM province_notice WHERE province_org_id=? AND deleted=false
-                  AND (publisher_level='PROVINCE' OR
+                  AND ((targeted=false AND (publisher_level='PROVINCE' OR
                        (publisher_level='CITY' AND city_org_id=?
-                        AND (?='ENTERPRISE' OR publisher_user_id=?)))
-                """, Long.class, provinceId, cityId, role, userId);
+                        AND (?='ENTERPRISE' OR publisher_user_id=?))))
+                    OR (targeted=true AND (?='PROVINCE' OR EXISTS
+                        (SELECT 1 FROM notice_recipient nr
+                         WHERE nr.notice_id=province_notice.id AND nr.org_id=?))))
+                """, Long.class, provinceId, cityId, role, userId, role, orgId);
         return count == null ? 0 : count;
     }
     public Optional<NoticeRow> find(long id, long provinceId, boolean includeDeleted,
@@ -45,6 +51,11 @@ public class NoticeDao {
         return jdbc.query("SELECT * FROM province_notice WHERE id=? AND province_org_id=?"
                         + (includeDeleted ? "" : " AND deleted=false") + (lock ? " FOR UPDATE" : ""),
                 this::row, id, provinceId).stream().findFirst();
+    }
+    public boolean recipient(long noticeId,long orgId) {
+        Integer count=jdbc.queryForObject("SELECT COUNT(*) FROM notice_recipient "
+                + "WHERE notice_id=? AND org_id=?",Integer.class,noticeId,orgId);
+        return count!=null && count>0;
     }
     public void insert(long id, long provinceId, long userId, String unitName,
             String title, String content, LocalDateTime now, String level, Long cityId) {
@@ -102,7 +113,8 @@ public class NoticeDao {
                 rs.getString("title"), rs.getString("content"), rs.getInt("current_version"),
                 instant(rs, "published_at"), instant(rs, "updated_at"),
                 rs.getBoolean("deleted"), instant(rs, "deleted_at"),
-                rs.getString("publisher_level"), (Long) rs.getObject("city_org_id"));
+                rs.getString("publisher_level"), (Long) rs.getObject("city_org_id"),
+                rs.getBoolean("targeted"));
     }
     private static Instant instant(ResultSet rs, String field) throws SQLException {
         LocalDateTime time = rs.getObject(field, LocalDateTime.class);
@@ -111,5 +123,5 @@ public class NoticeDao {
     public record NoticeRow(long id, long provinceOrgId, long publisherUserId,
             String publisherUnitName, String title, String content, int currentVersion,
             Instant publishedAt, Instant updatedAt, boolean deleted, Instant deletedAt,
-            String publisherLevel, Long cityOrgId) { }
+            String publisherLevel, Long cityOrgId, boolean targeted) { }
 }
